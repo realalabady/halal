@@ -456,3 +456,101 @@
     justify-content: space-between;
   }
 }
+
+
+/* ============================================
+   RESPONSIVE — phones & small tablets
+   ============================================ */
+@media (max-width: 992px) {
+  .orders-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .orders-page .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .status-select {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .update-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .detail-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .modal {
+    display: flex;
+    flex-direction: column;
+    max-height: 94dvh;
+  }
+}
+
+@media (max-width: 576px) {
+  .orders-stats {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  /* A nine-column order table cannot be read on a phone. Keep the columns an
+     admin scans by (number, customer, total, status, actions) and leave the
+     rest to the detail modal, which already shows every one of them. */
+  .orders-page .table th:nth-child(3),
+  .orders-page .table td:nth-child(3),
+  .orders-page .table th:nth-child(5),
+  .orders-page .table td:nth-child(5),
+  .orders-page .table th:nth-child(6),
+  .orders-page .table td:nth-child(6),
+  .orders-page .table th:nth-child(7),
+  .orders-page .table td:nth-child(7) {
+    display: none;
+  }
+
+  .orders-page .table {
+    min-width: 520px;
+  }
+
+  .orders-page .table th,
+  .orders-page .table td {
+    padding: 12px 10px;
+    font-size: 13px;
+  }
+
+  /* Modals become bottom sheets. */
+  .modal-overlay {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .modal {
+    max-width: none;
+    border-radius: 20px 20px 0 0;
+  }
+
+  .modal-header,
+  .modal-body,
+  .modal-footer {
+    padding-inline: 16px;
+  }
+
+  .modal-footer {
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+
+  .modal-footer .btn {
+    width: 100%;
+  }
+}

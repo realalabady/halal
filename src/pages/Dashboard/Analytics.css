@@ -261,3 +261,87 @@
     display: none;
   }
 }
+
+
+/* ============================================
+   RESPONSIVE — phones & small tablets
+   ============================================ */
+@media (max-width: 768px) {
+  /* An earlier rule dropped these to one per row at 768px, which wastes a
+     tablet's width. Two up until the phone breakpoint. */
+  .summary-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .analytics-page .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .analytics-page .header-actions {
+    width: 100%;
+  }
+
+  .year-select {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .chart-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Twelve monthly bars inside 375px are a few pixels each. Give the row a
+     floor and let it scroll instead. */
+  .chart-bars {
+    min-width: 560px;
+  }
+
+  .analytics-page .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .reports-table {
+    min-width: 600px;
+  }
+}
+
+@media (max-width: 576px) {
+  .summary-cards {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  /* Year picker beside the export button squeezes the button into two lines. */
+  .analytics-page .header-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .analytics-page .header-actions .btn {
+    width: 100%;
+    justify-content: center;
+    white-space: nowrap;
+  }
+
+  .card-value {
+    font-size: 22px;
+  }
+
+  .reports-table th,
+  .reports-table td {
+    padding: 12px 10px;
+    font-size: 13px;
+  }
+
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}

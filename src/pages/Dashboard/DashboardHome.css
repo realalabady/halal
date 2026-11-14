@@ -548,3 +548,69 @@
 .recent-orders-table tr:hover {
   background: var(--bg);
 }
+
+
+/* ============================================
+   RESPONSIVE — phones & small tablets
+   ============================================ */
+@media (max-width: 992px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .charts-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chart-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .chart-filter {
+    width: 100%;
+  }
+
+  .chart-placeholder {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .dashboard-home .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .recent-orders-table {
+    min-width: 580px;
+  }
+}
+
+@media (max-width: 576px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .stat-value {
+    font-size: 24px;
+  }
+
+  .recent-orders-table th,
+  .recent-orders-table td {
+    padding: 12px 10px;
+    font-size: 13px;
+  }
+
+  .product-item {
+    gap: 10px;
+  }
+
+  .product-name {
+    font-size: 13px;
+  }
+}

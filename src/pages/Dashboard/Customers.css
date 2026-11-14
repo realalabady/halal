@@ -203,3 +203,51 @@
     display: none;
   }
 }
+
+
+/* ============================================
+   RESPONSIVE — phones & small tablets
+   ============================================ */
+@media (max-width: 992px) {
+  /* `overflow: hidden` on .table-container clipped the wide table instead of
+     letting it scroll, so the last columns were unreachable on a phone. */
+  .customers-page .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .customers-page .data-table {
+    min-width: 700px;
+  }
+}
+
+@media (max-width: 768px) {
+  .customers-page .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .search-box {
+    max-width: none;
+  }
+
+  .search-box input {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 576px) {
+  .customers-page .data-table {
+    min-width: 620px;
+  }
+
+  .customers-page .empty-state {
+    padding: 40px 16px;
+  }
+
+  .action-btn {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}

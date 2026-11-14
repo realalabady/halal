@@ -19,6 +19,9 @@
   min-height: 100vh;
   background: var(--bg);
   position: relative;
+  /* The sidebar parks itself off-screen on mobile. Without this it still
+     counts as scrollable overflow and the whole dashboard pans sideways. */
+  overflow-x: hidden;
 }
 
 /* ============================================
@@ -36,7 +39,7 @@
   display: flex;
   flex-direction: column;
   z-index: 1000;
-  transition: width 0.3s ease, right 0.3s ease;
+  transition: width 0.3s ease, transform 0.3s ease;
   box-shadow: none;
   overflow: hidden;
 }
@@ -732,20 +735,40 @@
    📱 RESPONSIVE DESIGN
    ============================================ */
 @media (max-width: 992px) {
+  /* Off-canvas drawer. `transform` instead of `right: -300px` so the parked
+     sidebar adds no scrollable overflow to the page. */
   .dashboard-sidebar {
-    right: -300px;
+    width: min(86vw, 320px);
+    transform: translateX(100%);
   }
 
   .dashboard-layout.sidebar-open .dashboard-sidebar {
-    right: 0;
+    transform: translateX(0);
   }
 
-  .dashboard-main {
-    margin-right: 0;
+  /* The collapsed (icon-rail) state is a desktop affordance. On mobile the
+     sidebar is a drawer, so it must stay full width even when collapsed. */
+  .sidebar-collapsed .dashboard-sidebar {
+    width: min(86vw, 320px);
   }
 
+  .sidebar-collapsed .sidebar-logo .logo-sub,
+  .sidebar-collapsed .sidebar-nav .nav-link span,
+  .sidebar-collapsed .logout-btn span {
+    display: initial;
+  }
+
+  .sidebar-collapsed .sidebar-nav .nav-link,
+  .sidebar-collapsed .logout-btn {
+    justify-content: flex-start;
+    padding: 14px 18px;
+  }
+
+  .dashboard-main,
   .sidebar-collapsed .dashboard-main {
     margin-right: 0;
+    width: 100%;
+    min-width: 0;
   }
 
   .sidebar-overlay {
@@ -753,18 +776,33 @@
   }
 
   .notification-dropdown {
-    width: 340px;
+    width: min(340px, calc(100vw - 32px));
     left: -100px;
   }
 }
 
-@media (max-width: 576px) {
+@media (max-width: 768px) {
   .dashboard-header {
-    padding: 16px 20px;
+    padding: 12px 16px;
+    gap: 12px;
   }
 
+  .header-right {
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .header-left {
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  /* Long section names must not shove the action buttons off-screen. */
   .page-title {
-    font-size: 18px;
+    font-size: 17px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .user-info {
@@ -772,23 +810,77 @@
   }
 
   .dashboard-content {
+    padding: 16px;
+  }
+
+  /* Comfortable touch targets (44px) without growing the icons. */
+  .menu-toggle,
+  .notification-btn {
+    padding: 10px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .nav-link,
+  .logout-btn,
+  .user-dropdown-item {
+    min-height: 44px;
+  }
+
+  /* Dropdowns become near-full-width sheets pinned under the header,
+     instead of 380px panels hanging off the side of the viewport. */
+  .notification-dropdown,
+  .user-dropdown {
+    position: fixed;
+    top: 68px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-height: calc(100dvh - 88px);
+    overflow-y: auto;
+  }
+
+  .notification-dropdown::before,
+  .user-dropdown::before {
+    display: none;
+  }
+}
+
+@media (max-width: 576px) {
+  .sidebar-header {
     padding: 20px;
   }
 
-  .notification-dropdown {
-    width: calc(100vw - 40px);
-    left: auto;
-    right: -20px;
+  .sidebar-logo-image {
+    height: 56px;
   }
 
-  .notification-dropdown::before {
-    left: auto;
-    right: 30px;
+  .sidebar-logo .logo-text,
+  .sidebar-logo-text {
+    font-size: 22px;
   }
 
-  .user-dropdown {
-    width: calc(100vw - 40px);
-    left: auto;
-    right: -20px;
+  .sidebar-nav {
+    padding: 16px 12px;
+  }
+
+  .dashboard-content {
+    padding: 12px;
+  }
+
+  .page-title {
+    font-size: 16px;
+  }
+}
+
+/* Landscape phones: the drawer must still scroll to its logout button. */
+@media (max-height: 520px) and (max-width: 992px) {
+  .sidebar-header {
+    padding: 14px 20px;
+  }
+
+  .sidebar-logo-image {
+    height: 40px;
+    margin-bottom: 6px;
   }
 }

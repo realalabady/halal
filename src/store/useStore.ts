@@ -52,6 +52,7 @@ interface StoreState {
   // UI
   sidebarOpen: boolean;
   toggleSidebar: () => void;
+  setSidebarOpen: (open: boolean) => void;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
 }
@@ -171,6 +172,7 @@ export const useStore = create<StoreState>()(
       // UI
       sidebarOpen: true,
       toggleSidebar: () => set({ sidebarOpen: !get().sidebarOpen }),
+      setSidebarOpen: (open) => set({ sidebarOpen: open }),
       searchQuery: "",
       setSearchQuery: (query) => set({ searchQuery: query }),
     }),

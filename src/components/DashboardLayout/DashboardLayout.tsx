@@ -41,7 +41,8 @@ const menuItems = [
 const DashboardLayout: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { sidebarOpen, toggleSidebar, user, setUser, storeInfo } = useStore();
+  const { sidebarOpen, toggleSidebar, setSidebarOpen, user, setUser, storeInfo } =
+    useStore();
   const isAdmin = user?.role === "admin";
   const [pendingCount, setPendingCount] = useState(0);
   const [pendingOrders, setPendingOrders] = useState<FirestoreOrder[]>([]);
@@ -61,6 +62,25 @@ const DashboardLayout: React.FC = () => {
     });
     return () => unsubscribe();
   }, [isAdmin]);
+
+  // على الشاشات الصغيرة الشريط الجانبي عبارة عن درج يغطي المحتوى، لذلك يبدأ
+  // مغلقاً ويُغلق بعد كل تنقل. (الحالة محفوظة في التخزين المحلي، فلا يكفي
+  // ضبط القيمة الابتدائية مرة واحدة.)
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 992px)").matches) {
+      setSidebarOpen(false);
+    }
+  }, [location.pathname, setSidebarOpen]);
+
+  // وعند تصغير النافذة من مقاس سطح المكتب إلى مقاس الجوال
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 992px)");
+    const handleChange = (e: MediaQueryListEvent) => {
+      if (e.matches) setSidebarOpen(false);
+    };
+    mq.addEventListener("change", handleChange);
+    return () => mq.removeEventListener("change", handleChange);
+  }, [setSidebarOpen]);
 
   // إغلاق القوائم عند النقر خارجها
   useEffect(() => {

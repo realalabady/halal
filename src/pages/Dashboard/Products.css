@@ -701,3 +701,118 @@
 .description-header .form-label {
   margin-bottom: 0;
 }
+
+
+/* ============================================
+   RESPONSIVE — phones & small tablets
+   ============================================ */
+@media (max-width: 992px) {
+  .products-page .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .products-page .table {
+    min-width: 760px;
+  }
+}
+
+@media (max-width: 768px) {
+  .products-page .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .header-actions {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .header-actions .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .modal {
+    display: flex;
+    flex-direction: column;
+    max-height: 94dvh;
+  }
+
+  /* The body had a fixed 60vh cap, so the form scrolled inside a short box on
+     a tall phone. Let it take whatever height the sheet leaves. */
+  .modal-body {
+    max-height: none;
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (max-width: 576px) {
+  .products-page .table {
+    min-width: 620px;
+  }
+
+  .products-page .table th,
+  .products-page .table td {
+    padding: 12px 10px;
+    font-size: 13px;
+  }
+
+  .product-thumb {
+    width: 40px;
+    height: 40px;
+  }
+
+  .modal-overlay {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .modal {
+    max-width: none;
+    border-radius: 20px 20px 0 0;
+  }
+
+  .modal-header,
+  .modal-body,
+  .modal-footer {
+    padding-inline: 16px;
+  }
+
+  .modal-footer {
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+
+  .modal-footer .btn {
+    width: 100%;
+  }
+
+  /* Key, value and the remove button on one 375px row leaves nothing for the
+     inputs themselves. */
+  .spec-row {
+    flex-wrap: wrap;
+  }
+
+  .spec-key,
+  .spec-value {
+    flex: 1 1 100%;
+  }
+
+  .uploaded-images {
+    grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  }
+
+  .pagination-buttons {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .filter-buttons .btn,
+  .pagination-btn {
+    min-height: 40px;
+  }
+}
