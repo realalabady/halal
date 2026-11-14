@@ -12,8 +12,26 @@ import { addContactMessage } from "../../services/firestore";
 import { useStore } from "../../store/useStore";
 import "./Contact.css";
 
+/**
+ * يحوّل رقم المتجر إلى الصيغة التي يقبلها wa.me (أرقام فقط، بمفتاح الدولة).
+ * يدعم الصيغ السعودية الشائعة: 05xxxxxxxx و 5xxxxxxxx و +966 و 00966.
+ */
+const toWhatsAppNumber = (phone: string): string => {
+  let digits = (phone || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (digits.startsWith("0") && digits.length === 10) {
+    digits = "966" + digits.slice(1);
+  } else if (digits.length === 9 && digits.startsWith("5")) {
+    digits = "966" + digits;
+  }
+  return digits;
+};
+
 const Contact: React.FC = () => {
   const { storeInfo } = useStore();
+  // زر الواتساب يتبع رقم المتجر في الإعدادات، ويختفي إن لم يُضبط رقم.
+  const whatsappNumber = toWhatsAppNumber(storeInfo.storePhone);
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -101,16 +119,18 @@ const Contact: React.FC = () => {
               </div>
             </div>
 
-            <div className="whatsapp-btn">
-              <a
-                href="https://wa.me/966556122411"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <MessageSquare size={20} />
-                تواصل عبر واتساب
-              </a>
-            </div>
+            {whatsappNumber && (
+              <div className="whatsapp-btn">
+                <a
+                  href={`https://wa.me/${whatsappNumber}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <MessageSquare size={20} />
+                  تواصل عبر واتساب
+                </a>
+              </div>
+            )}
           </div>
 
           {/* Contact Form */}

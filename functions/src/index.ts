@@ -137,10 +137,14 @@ function wrapError(error: unknown): never {
 // Fallbacks only. Each store's real base URL and brand live in its own
 // stores/{storeId}/settings/store document — a single project-wide env var
 // cannot describe several storefronts sharing one Functions deployment.
-const STORE_BASE_URL_FALLBACK =
+// No literal default: pointing a buyer or a product feed at some other
+// shop's domain is worse than having no URL at all. An empty value is
+// surfaced by getStoreIdentity() below instead.
+const STORE_BASE_URL_FALLBACK = (
   process.env.STORE_BASE_URL ||
   functions.config().store?.base_url ||
-  "https://jabouri-digital-library.web.app";
+  ""
+).replace(/\/+$/, "");
 
 const STORE_BRAND_FALLBACK =
   process.env.STORE_BRAND || functions.config().store?.brand || "My Store";
@@ -160,8 +164,16 @@ async function getStoreIdentity(storeId: string): Promise<StoreIdentity> {
     const rawUrl = typeof store.baseUrl === "string" ? store.baseUrl.trim() : "";
     const rawBrand =
       typeof store.storeName === "string" ? store.storeName.trim() : "";
+    const baseUrl = (rawUrl || STORE_BASE_URL_FALLBACK).replace(/\/+$/, "");
+    if (!baseUrl) {
+      console.warn(
+        `getStoreIdentity(${storeId}): no baseUrl. Set it in ` +
+          `stores/${storeId}/settings/store.store.baseUrl (or the ` +
+          "STORE_BASE_URL env var). Product links will be relative.",
+      );
+    }
     return {
-      baseUrl: (rawUrl || STORE_BASE_URL_FALLBACK).replace(/\/+$/, ""),
+      baseUrl,
       brand: rawBrand || STORE_BRAND_FALLBACK,
     };
   } catch (e) {

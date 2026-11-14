@@ -40,6 +40,8 @@ const Settings: React.FC = () => {
     storeAddress: "المملكة العربية السعودية",
     currency: "SAR",
     language: "ar",
+    bankName: "",
+    bankIban: "",
   });
 
   const [shippingSettings, setShippingSettings] = useState({
@@ -102,7 +104,11 @@ const Settings: React.FC = () => {
       try {
         const settings = await getSettings();
         if (settings) {
-          if (settings.store) setStoreSettings(settings.store);
+          // الدمج لا الاستبدال: مستندات المتاجر القديمة لا تحوي حقول البنك،
+          // واستبدال الكائن كله يجعل قيم تلك الحقول undefined فتتحول الحقول
+          // المتحكَّم بها إلى غير متحكَّم بها.
+          if (settings.store)
+            setStoreSettings((prev) => ({ ...prev, ...settings.store }));
           if (settings.shipping) setShippingSettings(settings.shipping);
           if (settings.notifications)
             setNotificationSettings(settings.notifications);
@@ -371,6 +377,40 @@ const Settings: React.FC = () => {
                         })
                       }
                     />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>اسم البنك</label>
+                    <input
+                      type="text"
+                      value={storeSettings.bankName}
+                      placeholder="مثال: البنك الأهلي"
+                      onChange={(e) =>
+                        setStoreSettings({
+                          ...storeSettings,
+                          bankName: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>رقم الآيبان</label>
+                    <input
+                      type="text"
+                      dir="ltr"
+                      value={storeSettings.bankIban}
+                      placeholder="SA…"
+                      onChange={(e) =>
+                        setStoreSettings({
+                          ...storeSettings,
+                          bankIban: e.target.value.trim(),
+                        })
+                      }
+                    />
+                    <small className="field-hint">
+                      بدون آيبان لن يظهر خيار التحويل البنكي للعملاء عند الدفع.
+                    </small>
                   </div>
                 </div>
                 <div className="form-row">

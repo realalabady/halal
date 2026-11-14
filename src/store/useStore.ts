@@ -9,6 +9,9 @@ export interface StoreInfo {
   storeAddress: string;
   currency: string;
   language: string;
+  /** بيانات التحويل البنكي — تُضبط من لوحة التحكم، ولا تُكتب في الكود. */
+  bankName: string;
+  bankIban: string;
 }
 
 export const DEFAULT_STORE_INFO: StoreInfo = {
@@ -18,6 +21,8 @@ export const DEFAULT_STORE_INFO: StoreInfo = {
   storeAddress: "",
   currency: "SAR",
   language: "ar",
+  bankName: "",
+  bankIban: "",
 };
 
 interface StoreState {

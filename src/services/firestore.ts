@@ -386,6 +386,8 @@ export interface StoreSettings {
     storeAddress: string;
     currency: string;
     language: string;
+    bankName?: string;
+    bankIban?: string;
   };
   shipping?: {
     freeShippingThreshold: number;

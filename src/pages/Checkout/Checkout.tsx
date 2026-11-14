@@ -487,6 +487,9 @@ const Checkout: React.FC = () => {
                       <div className="payment-options">
                         {paymentMethods
                           .filter((m) => m.enabled)
+                          // التحويل البنكي بلا آيبان مضبوط في الإعدادات يترك
+                          // العميل بلا حساب يحوّل إليه، فنخفي الخيار أصلاً.
+                          .filter((m) => m.id !== "bank" || !!storeInfo.bankIban)
                           .map((method) => (
                             <label key={method.id} className="payment-option">
                               <input
@@ -529,16 +532,18 @@ const Checkout: React.FC = () => {
                       {formData.paymentMethod === "bank" && (
                         <div className="bank-details">
                           <h4>بيانات الحساب البنكي</h4>
-                          <p>
-                            <strong>البنك:</strong> البنك الأهلي
-                          </p>
+                          {storeInfo.bankName && (
+                            <p>
+                              <strong>البنك:</strong> {storeInfo.bankName}
+                            </p>
+                          )}
                           <p>
                             <strong>اسم الحساب:</strong>{" "}
                             {storeInfo.storeName || "حلال"}
                           </p>
                           <p>
                             <strong>رقم الآيبان:</strong>{" "}
-                            SA0000000000000000000000
+                            {storeInfo.bankIban}
                           </p>
                           <p className="note">
                             يرجى إرسال إيصال التحويل عبر الواتساب

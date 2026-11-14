@@ -5,8 +5,9 @@ const PAYPAL_SANDBOX_URL = "https://api-m.sandbox.paypal.com";
 const PAYPAL_LIVE_URL = "https://api-m.paypal.com";
 
 // Store branding / base URL (configurable so buyers can rebrand via env).
-const STORE_BASE_URL =
-  process.env.STORE_BASE_URL || "https://jabouri-digital-library.web.app";
+// No literal default. A wrong return_url sends a paying customer to someone
+// else's site; omitting it lets PayPal fall back to its own flow.
+const STORE_BASE_URL = (process.env.STORE_BASE_URL || "").replace(/\/+$/, "");
 const STORE_BRAND =
   process.env.STORE_BRAND || "My Store";
 
@@ -91,8 +92,12 @@ export async function createOrder(orderData: {
       user_action: "PAY_NOW",
       // ملاحظة: تدفق البطاقة يستخدم SDK (نافذة منبثقة) وليس إعادة توجيه،
       // لكن نوجّه هذه الروابط لمسارات موجودة فعلاً لتفادي صفحة 404.
-      return_url: `${STORE_BASE_URL}/order-confirmation`,
-      cancel_url: `${STORE_BASE_URL}/checkout`,
+      ...(STORE_BASE_URL
+        ? {
+            return_url: `${STORE_BASE_URL}/order-confirmation`,
+            cancel_url: `${STORE_BASE_URL}/checkout`,
+          }
+        : {}),
     },
   };
 
