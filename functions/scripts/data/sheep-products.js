@@ -11,6 +11,9 @@
  * داخل كل سلالة: ثلث < نصف < كاملة. وسعر الحصة الصغيرة أعلى نسبياً من نصيبها
  * من الذبيحة الكاملة، وهو ما تفعله السوق فعلاً لأن التقطيع الجزئي أعلى كلفة.
  *
+ * لا تقييمات ولا عدد مراجعات هنا: المتجر لا يملك نظام مراجعات،
+ * وأي رقم نكتبه هنا سيكون مختلقاً. واجهة النجوم تختفي تلقائياً دون تقييم.
+ *
  * الصور: ملفات حقيقية من ويكيميديا كومنز (رخص حرة)، تُهوتلنك مباشرة من
  * upload.wikimedia.org. الموزّع أدناه يضمن ألا تتكرر صورة واحدة بين منتجين.
  */
@@ -306,8 +309,6 @@ const BREEDS = [
     weights: { whole: "20 – 24 كجم", half: "10 – 12 كجم", third: "6.5 – 8 كجم" },
     servings: { whole: "18 – 22 شخصاً", half: "9 – 11 شخصاً", third: "6 – 7 أشخاص" },
     stock: { whole: 9, half: 14, third: 21 },
-    rating: 4.9,
-    reviews: 63,
     featured: true,
     tags: ["فاخر", "ولائم", "أعراس", "سلالة محلية"],
   },
@@ -335,8 +336,6 @@ const BREEDS = [
     weights: { whole: "18 – 22 كجم", half: "9 – 11 كجم", third: "6 – 7.5 كجم" },
     servings: { whole: "16 – 20 شخصاً", half: "8 – 10 أشخاص", third: "5 – 7 أشخاص" },
     stock: { whole: 7, half: 12, third: 18 },
-    rating: 4.8,
-    reviews: 47,
     featured: true,
     tags: ["فاخر", "مندي", "مظبي", "ولائم"],
   },
@@ -364,8 +363,6 @@ const BREEDS = [
     weights: { whole: "16 – 19 كجم", half: "8 – 9.5 كجم", third: "5 – 6.5 كجم" },
     servings: { whole: "14 – 18 شخصاً", half: "7 – 9 أشخاص", third: "5 – 6 أشخاص" },
     stock: { whole: 16, half: 24, third: 33 },
-    rating: 4.8,
-    reviews: 128,
     featured: true,
     tags: ["الأكثر طلباً", "عزائم", "سلالة محلية"],
   },
@@ -392,8 +389,6 @@ const BREEDS = [
     weights: { whole: "17 – 20 كجم", half: "8.5 – 10 كجم", third: "5.5 – 6.5 كجم" },
     servings: { whole: "15 – 18 شخصاً", half: "8 – 9 أشخاص", third: "5 – 6 أشخاص" },
     stock: { whole: 13, half: 19, third: 27 },
-    rating: 4.7,
-    reviews: 74,
     featured: true,
     tags: ["وفرة لحم", "عزائم كبيرة", "قليل الدهن"],
   },
@@ -420,8 +415,6 @@ const BREEDS = [
     weights: { whole: "14 – 17 كجم", half: "7 – 8.5 كجم", third: "4.5 – 5.5 كجم" },
     servings: { whole: "12 – 15 شخصاً", half: "6 – 8 أشخاص", third: "4 – 5 أشخاص" },
     stock: { whole: 18, half: 26, third: 31 },
-    rating: 4.6,
-    reviews: 52,
     featured: false,
     tags: ["مستورد", "عزائم عائلية"],
   },
@@ -448,8 +441,6 @@ const BREEDS = [
     weights: { whole: "12 – 15 كجم", half: "6 – 7.5 كجم", third: "4 – 5 كجم" },
     servings: { whole: "10 – 13 شخصاً", half: "5 – 7 أشخاص", third: "3 – 4 أشخاص" },
     stock: { whole: 28, half: 35, third: 44 },
-    rating: 4.4,
-    reviews: 96,
     featured: false,
     tags: ["اقتصادي", "كميات", "مستورد"],
   },
@@ -476,8 +467,6 @@ const BREEDS = [
     weights: { whole: "11 – 14 كجم", half: "5.5 – 7 كجم", third: "3.5 – 4.5 كجم" },
     servings: { whole: "9 – 12 شخصاً", half: "5 – 6 أشخاص", third: "3 – 4 أشخاص" },
     stock: { whole: 32, half: 41, third: 38 },
-    rating: 4.3,
-    reviews: 61,
     featured: false,
     tags: ["اقتصادي", "مبرّد", "مستورد"],
   },
@@ -504,8 +493,6 @@ const BREEDS = [
     weights: { whole: "11 – 13 كجم", half: "5.5 – 6.5 كجم", third: "3.5 – 4.5 كجم" },
     servings: { whole: "9 – 11 شخصاً", half: "5 – 6 أشخاص", third: "3 – 4 أشخاص" },
     stock: { whole: 24, half: 30, third: 36 },
-    rating: 4.4,
-    reviews: 58,
     featured: false,
     tags: ["اقتصادي", "عزائم صغيرة"],
   },
@@ -545,8 +532,6 @@ function build() {
         stock: breed.stock[portion.key],
         featured: breed.featured && portion.key === "whole",
         brand: breed.ar,
-        rating: breed.rating,
-        reviewCount: breed.reviews,
         features: FEATURES,
         tags: ["ذبائح", breed.ar, portion.ar, "لحم طازج", "توصيل مبرّد", ...breed.tags],
         specs: {
