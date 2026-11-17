@@ -1,7 +1,8 @@
 import React, { useEffect, useState, lazy, Suspense } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "./config/firebase";
+import { isOtpPending, isOtpStepInProgress } from "./services/authOtp";
 import { STORE_ID } from "./config/store";
 import {
   getUserById,
@@ -108,6 +109,23 @@ const App: React.FC = () => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
+        // صفحة تسجيل الدخول في منتصف خطوة رمز التحقق: الجلسة قائمة لكن
+        // الدخول لم يكتمل، فلا نُدخل المستخدم إلى المتجر بعد.
+        if (isOtpStepInProgress()) {
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+
+        // جلسة بكلمة مرور لم تُكمل خطوة الرمز (مثلاً بعد تحديث الصفحة):
+        // نُخرجها بدل أن تمر، وإلا كان تحديث الصفحة تجاوزاً للتحقق.
+        if (await isOtpPending()) {
+          await signOut(auth).catch(() => undefined);
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+
         try {
           // جلب بيانات المستخدم من Firestore
           let userData = await getUserById(firebaseUser.uid);

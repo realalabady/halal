@@ -122,6 +122,8 @@ export interface FirestoreOrder {
   shippingCost?: number;
   status: "pending" | "processing" | "shipped" | "delivered" | "cancelled";
   paymentMethod: string;
+  /** طريقة الاستلام: توصيل للعنوان أو استلام من الفرع */
+  fulfillment?: "delivery" | "pickup";
   paymentStatus?: "pending" | "paid";
   paypalOrderId?: string;
   paypalCaptureId?: string;

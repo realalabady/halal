@@ -2671,3 +2671,257 @@ export const scrapeProductFromUrl = functions
       throw new functions.https.HttpsError("internal", msg);
     }
   });
+
+// ==================== تحقق بخطوتين عبر البريد (OTP) ====================
+// بعد نجاح كلمة المرور، لا يدخل المستخدم المتجر إلا بإدخال رمز من 6 أرقام
+// يُرسل إلى بريده. الرمز لا يُخزَّن كنص صريح (نخزّن sha256 مع ملح عشوائي)،
+// وللمحاولات والإرسال حدود تمنع التخمين والإغراق بالرسائل.
+//
+// الإلزام ليس في الواجهة فقط: authSendLoginOtp يضع claim اسمه otpVerified
+// بالقيمة false، و authVerifyLoginOtp يحوّله إلى true. التطبيق يُخرج أي
+// مستخدم يحمل otpVerified === false، فلا يفيد تحديث الصفحة في تجاوز الخطوة.
+
+import { createHash, randomBytes, randomInt } from "crypto";
+import { sendLoginOtpEmail } from "./otpService";
+
+const OTP_LENGTH = 6;
+const OTP_TTL_MINUTES = 5;
+const OTP_MAX_ATTEMPTS = 5;
+const OTP_RESEND_COOLDOWN_SECONDS = 60;
+const OTP_MAX_SENDS_PER_WINDOW = 5;
+const OTP_SEND_WINDOW_MINUTES = 15;
+
+const otpDoc = (
+  storeId: string,
+  uid: string,
+): FirebaseFirestore.DocumentReference => storeDoc(storeId, "loginOtps", uid);
+
+const hashOtp = (code: string, salt: string): string =>
+  createHash("sha256").update(`${salt}:${code}`).digest("hex");
+
+/** 000000..999999 بمصدر عشوائي مناسب للتشفير. */
+const generateOtp = (): string =>
+  String(randomInt(0, 10 ** OTP_LENGTH)).padStart(OTP_LENGTH, "0");
+
+/** a***b@example.com — يطمئن المستخدم إلى البريد بلا كشفه كاملاً. */
+const maskEmail = (email: string): string => {
+  const [name, domain] = email.split("@");
+  if (!domain) return email;
+  const visible = name.slice(0, 1);
+  const last = name.length > 2 ? name.slice(-1) : "";
+  return `${visible}${"*".repeat(Math.max(name.length - 2, 1))}${last}@${domain}`;
+};
+
+/** يضبط claim التحقق مع الحفاظ على بقية claims الموجودة. */
+const setOtpClaim = async (uid: string, verified: boolean): Promise<void> => {
+  const user = await admin.auth().getUser(uid);
+  await admin.auth().setCustomUserClaims(uid, {
+    ...(user.customClaims || {}),
+    otpVerified: verified,
+  });
+};
+
+const requireSignedIn = (
+  context: functions.https.CallableContext,
+): { uid: string; email: string } => {
+  const uid = context.auth?.uid;
+  const email =
+    typeof context.auth?.token?.email === "string"
+      ? context.auth.token.email
+      : "";
+  if (!uid) {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "يجب إدخال كلمة المرور أولاً",
+    );
+  }
+  if (!email) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "لا يوجد بريد إلكتروني مرتبط بالحساب",
+    );
+  }
+  return { uid, email };
+};
+
+const toMillis = (value: unknown): number => {
+  if (value instanceof admin.firestore.Timestamp) return value.toMillis();
+  return 0;
+};
+
+/** يولّد رمزاً جديداً ويرسله بالبريد، مع احترام مهلة إعادة الإرسال. */
+export const authSendLoginOtp = functions.https.onCall(
+  async (data, context) => {
+    const storeId = await requireStoreId(data);
+    const { uid, email } = requireSignedIn(context);
+
+    const ref = otpDoc(storeId, uid);
+    const existing = (await ref.get()).data();
+    const now = Date.now();
+
+    // مهلة إعادة الإرسال: لا رمز جديد قبل انتهاء العدّاد.
+    if (existing) {
+      const sinceLastSend = (now - toMillis(existing.lastSentAt)) / 1000;
+      if (sinceLastSend < OTP_RESEND_COOLDOWN_SECONDS) {
+        return {
+          sent: false,
+          maskedEmail: maskEmail(email),
+          resendAfterSeconds: Math.ceil(
+            OTP_RESEND_COOLDOWN_SECONDS - sinceLastSend,
+          ),
+          expiresInSeconds: Math.max(
+            Math.ceil((toMillis(existing.expiresAt) - now) / 1000),
+            0,
+          ),
+        };
+      }
+
+      // سقف عدد الإرسالات داخل النافذة الزمنية، ضد إغراق البريد.
+      const windowStart = toMillis(existing.firstSentAt);
+      const withinWindow =
+        now - windowStart < OTP_SEND_WINDOW_MINUTES * 60 * 1000;
+      if (withinWindow && (existing.sendCount || 0) >= OTP_MAX_SENDS_PER_WINDOW) {
+        throw new functions.https.HttpsError(
+          "resource-exhausted",
+          `تم تجاوز عدد محاولات الإرسال. حاول بعد ${OTP_SEND_WINDOW_MINUTES} دقيقة.`,
+        );
+      }
+    }
+
+    const code = generateOtp();
+    const salt = randomBytes(16).toString("hex");
+    const expiresAt = new Date(now + OTP_TTL_MINUTES * 60 * 1000);
+
+    const keepWindow =
+      existing &&
+      now - toMillis(existing.firstSentAt) <
+        OTP_SEND_WINDOW_MINUTES * 60 * 1000;
+
+    // claim = false أولاً: لو فشل الإرسال لا يبقى المستخدم داخل المتجر.
+    await setOtpClaim(uid, false);
+
+    await ref.set({
+      email,
+      salt,
+      codeHash: hashOtp(code, salt),
+      attempts: 0,
+      sendCount: keepWindow ? (existing?.sendCount || 0) + 1 : 1,
+      firstSentAt: keepWindow
+        ? existing?.firstSentAt
+        : admin.firestore.Timestamp.fromMillis(now),
+      lastSentAt: admin.firestore.Timestamp.fromMillis(now),
+      expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+    });
+
+    const result = await sendLoginOtpEmail(
+      storeId,
+      email,
+      code,
+      OTP_TTL_MINUTES,
+    );
+
+    if (!result.success) {
+      await ref.delete().catch(() => undefined);
+      throw new functions.https.HttpsError(
+        "internal",
+        "تعذّر إرسال رمز التحقق إلى بريدك. حاول لاحقاً أو راجع صاحب المتجر.",
+      );
+    }
+
+    return {
+      sent: true,
+      maskedEmail: maskEmail(email),
+      resendAfterSeconds: OTP_RESEND_COOLDOWN_SECONDS,
+      expiresInSeconds: OTP_TTL_MINUTES * 60,
+    };
+  },
+);
+
+/** يتحقق من الرمز؛ عند النجاح يصبح claim otpVerified = true. */
+export const authVerifyLoginOtp = functions.https.onCall(
+  async (data, context) => {
+    const storeId = await requireStoreId(data);
+    const { uid } = requireSignedIn(context);
+
+    const raw = (data as Record<string, unknown> | undefined)?.code;
+    const code = typeof raw === "string" ? raw.replace(/\D/g, "") : "";
+    if (code.length !== OTP_LENGTH) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "الرمز يجب أن يكون 6 أرقام",
+      );
+    }
+
+    const ref = otpDoc(storeId, uid);
+    const snap = await ref.get();
+    const record = snap.data();
+
+    if (!record) {
+      throw new functions.https.HttpsError(
+        "not-found",
+        "لا يوجد رمز تحقق صالح. اطلب رمزاً جديداً.",
+      );
+    }
+
+    if (toMillis(record.expiresAt) < Date.now()) {
+      await ref.delete().catch(() => undefined);
+      throw new functions.https.HttpsError(
+        "deadline-exceeded",
+        "انتهت صلاحية الرمز. اطلب رمزاً جديداً.",
+      );
+    }
+
+    const attempts = (record.attempts || 0) + 1;
+    if (attempts > OTP_MAX_ATTEMPTS) {
+      await ref.delete().catch(() => undefined);
+      throw new functions.https.HttpsError(
+        "resource-exhausted",
+        "تم تجاوز عدد المحاولات. اطلب رمزاً جديداً.",
+      );
+    }
+
+    if (hashOtp(code, record.salt) !== record.codeHash) {
+      await ref.update({ attempts });
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        `الرمز غير صحيح. المحاولات المتبقية: ${Math.max(
+          OTP_MAX_ATTEMPTS - attempts,
+          0,
+        )}`,
+      );
+    }
+
+    await ref.delete().catch(() => undefined);
+    await setOtpClaim(uid, true);
+
+    return { verified: true };
+  },
+);
+
+/**
+ * تسجيل الدخول بـ Google لا يمرّ بالرمز (Google تحقّق من البريد أصلاً)، لكن
+ * قد يكون الحساب يحمل otpVerified=false من محاولة دخول بكلمة مرور لم تُكمل،
+ * فيخرجه التطبيق. هذه الدالة ترفع ذلك الحجز لمزوّدين موثوقين فقط.
+ */
+export const authClearOtpGate = functions.https.onCall(
+  async (data, context) => {
+    const storeId = await requireStoreId(data);
+    const { uid } = requireSignedIn(context);
+
+    const provider = context.auth?.token?.firebase?.sign_in_provider;
+    const trusted = ["google.com"];
+    if (!provider || !trusted.includes(provider)) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "هذه الطريقة تتطلب رمز تحقق",
+      );
+    }
+
+    await otpDoc(storeId, uid)
+      .delete()
+      .catch(() => undefined);
+    await setOtpClaim(uid, true);
+
+    return { verified: true };
+  },
+);

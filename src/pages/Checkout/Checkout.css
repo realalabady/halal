@@ -897,3 +897,46 @@
     font-size: 0.95rem;
   }
 }
+
+/* طريقة الاستلام (توصيل / استلام من الفرع) */
+.fulfillment-options {
+  margin-bottom: 1.5rem;
+}
+
+.fulfillment-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-light);
+  border-radius: 10px;
+  font-size: 0.9rem;
+  color: var(--dark);
+}
+
+.fulfillment-summary svg {
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.fulfillment-summary span {
+  flex: 1;
+}
+
+.change-fulfillment {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+@media (max-width: 480px) {
+  .fulfillment-summary {
+    flex-wrap: wrap;
+  }
+}

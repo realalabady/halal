@@ -10,6 +10,7 @@ import {
   Loader,
   AlertCircle,
   Clock,
+  Store,
 } from "lucide-react";
 import { useStore } from "../../store/useStore";
 import { addOrder, getSettings } from "../../services/firestore";
@@ -67,6 +68,8 @@ const Checkout: React.FC = () => {
     nationalAddress: "",
     notes: "",
     paymentMethod: "cash",
+    // طريقة الاستلام: توصيل للعنوان أو استلام من الفرع
+    fulfillment: "delivery" as "delivery" | "pickup",
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -143,9 +146,11 @@ const Checkout: React.FC = () => {
   };
 
   const subtotal = getCartTotal();
-  const shipping =
-    shippingSettings.enableFreeShipping &&
-    subtotal >= shippingSettings.freeShippingThreshold
+  const isPickup = formData.fulfillment === "pickup";
+  const shipping = isPickup
+    ? 0
+    : shippingSettings.enableFreeShipping &&
+        subtotal >= shippingSettings.freeShippingThreshold
       ? 0
       : shippingSettings.defaultShippingCost;
   const total = subtotal + shipping;
@@ -157,9 +162,11 @@ const Checkout: React.FC = () => {
     if (!formData.phone.trim()) newErrors.phone = "رقم الجوال مطلوب";
     else if (!/^05\d{8}$/.test(formData.phone))
       newErrors.phone = "رقم جوال غير صحيح";
-    if (!formData.city.trim()) newErrors.city = "المدينة مطلوبة";
-    if (!formData.district.trim()) newErrors.district = "الحي مطلوب";
-    if (!formData.street.trim()) newErrors.street = "الشارع مطلوب";
+    if (formData.fulfillment === "delivery") {
+      if (!formData.city.trim()) newErrors.city = "المدينة مطلوبة";
+      if (!formData.district.trim()) newErrors.district = "الحي مطلوب";
+      if (!formData.street.trim()) newErrors.street = "الشارع مطلوب";
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -222,16 +229,19 @@ const Checkout: React.FC = () => {
         paymentMethod: formData.paymentMethod,
         // إمكان: الطلب معلّق حتى يدفع العميل عبر الرابط الذي يرسله المتجر.
         ...(isEmkan ? { paymentStatus: "pending" as const } : {}),
-        shippingAddress: `${formData.city}، ${formData.district}، ${formData.street}${formData.building ? `، مبنى ${formData.building}` : ""}${formData.nationalAddress ? `، العنوان الوطني: ${formData.nationalAddress}` : ""}`,
+        fulfillment: formData.fulfillment,
+        shippingAddress: isPickup
+          ? `استلام من الفرع${storeInfo.storeAddress ? `: ${storeInfo.storeAddress}` : ""}`
+          : `${formData.city}، ${formData.district}، ${formData.street}${formData.building ? `، مبنى ${formData.building}` : ""}${formData.nationalAddress ? `، العنوان الوطني: ${formData.nationalAddress}` : ""}`,
 
         address: {
           fullName: formData.fullName,
           phone: formData.phone,
-          city: formData.city,
-          district: formData.district,
-          street: formData.street,
-          building: formData.building,
-          nationalAddress: formData.nationalAddress,
+          city: isPickup ? "" : formData.city,
+          district: isPickup ? "" : formData.district,
+          street: isPickup ? "" : formData.street,
+          building: isPickup ? "" : formData.building,
+          nationalAddress: isPickup ? "" : formData.nationalAddress,
         },
         notes: formData.notes,
         createdAt: new Date(),
@@ -292,7 +302,7 @@ const Checkout: React.FC = () => {
               <span className="step-number">
                 {step > 1 ? <Check size={16} /> : "1"}
               </span>
-              <span className="step-label">العنوان</span>
+              <span className="step-label">الاستلام</span>
             </div>
             <div className="step-line"></div>
             <div
@@ -318,9 +328,63 @@ const Checkout: React.FC = () => {
                   <div className="form-card">
                     <div className="card-header">
                       <MapPin size={22} />
-                      <h2>عنوان التوصيل</h2>
+                      <h2>{isPickup ? "بيانات المستلم" : "عنوان التوصيل"}</h2>
                     </div>
                     <div className="form-body">
+                      {/* طريقة الاستلام: توصيل أو استلام من الفرع */}
+                      <div className="payment-options fulfillment-options">
+                        <label className="payment-option">
+                          <input
+                            type="radio"
+                            name="fulfillment"
+                            value="delivery"
+                            checked={formData.fulfillment === "delivery"}
+                            onChange={() =>
+                              setFormData({
+                                ...formData,
+                                fulfillment: "delivery",
+                              })
+                            }
+                          />
+                          <div className="option-content">
+                            <Truck size={24} />
+                            <div>
+                              <strong>توصيل إلى العنوان</strong>
+                              <span>
+                                التوصيل خلال {shippingSettings.estimatedDays}{" "}
+                                أيام عمل
+                              </span>
+                            </div>
+                          </div>
+                        </label>
+                        <label className="payment-option">
+                          <input
+                            type="radio"
+                            name="fulfillment"
+                            value="pickup"
+                            checked={formData.fulfillment === "pickup"}
+                            onChange={() =>
+                              setFormData({
+                                ...formData,
+                                fulfillment: "pickup",
+                              })
+                            }
+                          />
+                          <div className="option-content">
+                            <Store size={24} />
+                            <div>
+                              <strong>استلام من الفرع</strong>
+                              <span>
+                                بدون رسوم شحن
+                                {storeInfo.storeAddress
+                                  ? ` — ${storeInfo.storeAddress}`
+                                  : ""}
+                              </span>
+                            </div>
+                          </div>
+                        </label>
+                      </div>
+
                       <div className="form-row">
                         <div className="form-group">
                           <label>الاسم الكامل *</label>
@@ -361,6 +425,8 @@ const Checkout: React.FC = () => {
                           )}
                         </div>
                       </div>
+                      {!isPickup && (
+                        <>
                       <div className="form-row">
                         <div className="form-group">
                           <label>المدينة *</label>
@@ -446,6 +512,8 @@ const Checkout: React.FC = () => {
                           placeholder="مثال: RRRD2929"
                         />
                       </div>
+                        </>
+                      )}
                       <div className="form-group">
                         <label>ملاحظات إضافية (اختياري)</label>
                         <textarea
@@ -453,7 +521,11 @@ const Checkout: React.FC = () => {
                           onChange={(e) =>
                             setFormData({ ...formData, notes: e.target.value })
                           }
-                          placeholder="أي تعليمات خاصة للتوصيل..."
+                          placeholder={
+                            isPickup
+                              ? "أي تعليمات خاصة للاستلام..."
+                              : "أي تعليمات خاصة للتوصيل..."
+                          }
                           rows={3}
                         />
                       </div>
@@ -484,6 +556,22 @@ const Checkout: React.FC = () => {
                       <h2>طريقة الدفع</h2>
                     </div>
                     <div className="form-body">
+                      <div className="fulfillment-summary">
+                        {isPickup ? <Store size={18} /> : <Truck size={18} />}
+                        <span>
+                          {isPickup
+                            ? `استلام من الفرع${storeInfo.storeAddress ? ` — ${storeInfo.storeAddress}` : ""}`
+                            : "توصيل إلى العنوان الذي أدخلته"}
+                        </span>
+                        <button
+                          type="button"
+                          className="change-fulfillment"
+                          onClick={() => setStep(1)}
+                        >
+                          تغيير
+                        </button>
+                      </div>
+
                       <div className="payment-options">
                         {paymentMethods
                           .filter((m) => m.enabled)
@@ -505,7 +593,12 @@ const Checkout: React.FC = () => {
                                 }
                               />
                               <div className="option-content">
-                                {method.id === "cash" && <Truck size={24} />}
+                                {method.id === "cash" &&
+                                  (isPickup ? (
+                                    <Store size={24} />
+                                  ) : (
+                                    <Truck size={24} />
+                                  ))}
                                 {method.id === "bank" && (
                                   <CreditCard size={24} />
                                 )}
@@ -513,7 +606,11 @@ const Checkout: React.FC = () => {
                                 <div>
                                   <strong>{method.name}</strong>
                                   {method.id === "cash" && (
-                                    <span>ادفع نقداً عند استلام طلبك</span>
+                                    <span>
+                                      {isPickup
+                                        ? "ادفع نقداً عند استلام طلبك من الفرع"
+                                        : "ادفع نقداً عند استلام طلبك"}
+                                    </span>
                                   )}
                                   {method.id === "bank" && (
                                     <span>تحويل إلى الحساب البنكي</span>
@@ -644,7 +741,11 @@ const Checkout: React.FC = () => {
                   <div className="summary-row">
                     <span>الشحن</span>
                     <span className={shipping === 0 ? "free" : ""}>
-                      {shipping === 0 ? "مجاني" : formatPrice(shipping)}
+                      {isPickup
+                        ? "استلام من الفرع"
+                        : shipping === 0
+                          ? "مجاني"
+                          : formatPrice(shipping)}
                     </span>
                   </div>
                   <div className="summary-row total">
@@ -653,9 +754,11 @@ const Checkout: React.FC = () => {
                   </div>
                 </div>
                 <div className="shipping-info">
-                  <Truck size={18} />
+                  {isPickup ? <Store size={18} /> : <Truck size={18} />}
                   <span>
-                    التوصيل خلال {shippingSettings.estimatedDays} أيام عمل
+                    {isPickup
+                      ? `الاستلام من الفرع${storeInfo.storeAddress ? `: ${storeInfo.storeAddress}` : ""} — سنتواصل معك عند جهوز الطلب`
+                      : `التوصيل خلال ${shippingSettings.estimatedDays} أيام عمل`}
                   </span>
                 </div>
               </div>

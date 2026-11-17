@@ -88,6 +88,13 @@ service cloud.firestore {
         allow write: if isStoreAdmin(storeId);
       }
 
+      // Login OTP codes - أسرار قصيرة العمر يكتبها Admin SDK (Cloud Functions)
+      // وحده. لا قراءة ولا كتابة من أي عميل، وإلا قرأ المستخدم بصمة رمزه
+      // أو عدّل عدد المحاولات.
+      match /loginOtps/{uid} {
+        allow read, write: if false;
+      }
+
       // Contact Messages - anyone can create, only this store's admin can read
       match /contactMessages/{messageId} {
         allow create: if true;
