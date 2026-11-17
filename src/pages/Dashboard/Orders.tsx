@@ -21,6 +21,9 @@ import {
 } from "../../services/firestore";
 import type { FirestoreOrder } from "../../services/firestore";
 import "./Orders.css";
+// مصدر واحد لأسماء طرق الدفع: الثلاثيات الشرطية السابقة كانت تُسمّي أي
+// معرّف غير معروف "بطاقة ائتمان"، فتُخطئ تسمية كل طلب بوابة جديدة.
+import { paymentMethodLabel } from "../../constants/paymentGateways";
 
 type Order = FirestoreOrder;
 
@@ -124,11 +127,7 @@ const Orders: React.FC = () => {
       o.customer || "عميل",
       o.email,
       o.total,
-      o.paymentMethod === "cash"
-        ? "الدفع عند الاستلام"
-        : o.paymentMethod === "bank"
-          ? "تحويل بنكي"
-          : "بطاقة",
+      paymentMethodLabel(o.paymentMethod),
       statusLabels[o.status] || o.status,
       formatDate(o.createdAt),
     ]);
@@ -304,11 +303,7 @@ const Orders: React.FC = () => {
                           <strong>{formatPrice(order.total)} ر.س</strong>
                         </td>
                         <td>
-                          {order.paymentMethod === "cash"
-                            ? "الدفع عند الاستلام"
-                            : order.paymentMethod === "bank"
-                              ? "تحويل بنكي"
-                              : "بطاقة ائتمان"}
+                          {paymentMethodLabel(order.paymentMethod)}
                         </td>
                         <td>
                           {order.paymentStatus === "paid" ? (
@@ -565,11 +560,7 @@ const Orders: React.FC = () => {
                   <div className="detail-row">
                     <span>طريقة الدفع:</span>
                     <strong>
-                      {selectedOrder.paymentMethod === "cash"
-                        ? "الدفع عند الاستلام"
-                        : selectedOrder.paymentMethod === "bank"
-                          ? "تحويل بنكي"
-                          : "بطاقة ائتمان"}
+                      {paymentMethodLabel(selectedOrder.paymentMethod)}
                     </strong>
                   </div>
                   <div className="detail-row">

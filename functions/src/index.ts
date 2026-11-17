@@ -8,6 +8,19 @@ import * as tamara from "./tamaraClient";
 import { scrapeAmazonProduct, scrapeAmazonWithApi } from "./amazonScraper";
 import { sendOrderConfirmationEmail, sendOrderStatusUpdateEmail } from "./emailService";
 import { sendOwnerEmkanNotification } from "./resendService";
+import {
+  STORE_ID_PATTERN,
+  pendingPaymentRef,
+  settingsRef,
+  storeCol,
+  storeDoc,
+  storeRef,
+} from "./storePaths";
+import {
+  computeOrderPricing,
+  validateOrderAmountFromPricing,
+} from "./orderPricing";
+import { buildPaymentGatewayFunctions } from "./paymentGatewayApi";
 
 admin.initializeApp();
 
@@ -16,37 +29,8 @@ admin.initializeApp();
 // للمشروع كله. لذلك لا يمكن أخذ هوية المتجر من متغير بيئة — كل نداء يجب أن
 // يحمل storeId، ويجب التحقق من صلاحيات المستدعي داخل ذلك المتجر تحديداً.
 
-const STORE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
-
-/** مستند جذر المتجر: stores/{storeId} */
-function storeRef(storeId: string): FirebaseFirestore.DocumentReference {
-  return admin.firestore().doc(`stores/${storeId}`);
-}
-
-/** مجموعة فرعية داخل المتجر: stores/{storeId}/{col} */
-function storeCol(
-  storeId: string,
-  col: string,
-): FirebaseFirestore.CollectionReference {
-  return admin.firestore().collection(`stores/${storeId}/${col}`);
-}
-
-/** مستند داخل مجموعة فرعية: stores/{storeId}/{col}/{id} */
-function storeDoc(
-  storeId: string,
-  col: string,
-  id: string,
-): FirebaseFirestore.DocumentReference {
-  return admin.firestore().doc(`stores/${storeId}/${col}/${id}`);
-}
-
-/** مستند إعدادات داخل المتجر: stores/{storeId}/settings/{id} */
-function settingsRef(
-  storeId: string,
-  id: string,
-): FirebaseFirestore.DocumentReference {
-  return storeDoc(storeId, "settings", id);
-}
+// بناة المسارات انتقلت إلى storePaths.ts ليتشاركها كود بوابات الدفع الجديد
+// بنفس المصدر الواحد. السلوك لم يتغيّر.
 
 /**
  * يستخرج storeId من حمولة النداء ويتحقق من وجود المتجر وتفعيله.
@@ -197,79 +181,11 @@ async function validateOrderAmount(
     | undefined,
   clientAmount: number,
 ): Promise<number> {
-  if (!Array.isArray(items) || items.length === 0) {
-    throw new functions.https.HttpsError(
-      "invalid-argument",
-      "عناصر الطلب مطلوبة",
-    );
-  }
-
-  let subtotal = 0;
-
-  for (const item of items) {
-    const productId = item?.productId || item?.reference_id;
-    const quantity = Number(item?.quantity) || 0;
-    if (!productId || quantity <= 0) {
-      throw new functions.https.HttpsError(
-        "invalid-argument",
-        "عنصر طلب غير صالح",
-      );
-    }
-    const productDoc = await storeDoc(storeId, "products", productId).get();
-    if (!productDoc.exists) {
-      throw new functions.https.HttpsError(
-        "invalid-argument",
-        `المنتج غير موجود: ${productId}`,
-      );
-    }
-    const product = productDoc.data() || {};
-    // Prefer the discounted/sale price if present, else the base price.
-    const unitPrice = Number(
-      product.discountPrice ?? product.salePrice ?? product.price ?? 0,
-    );
-    if (!(unitPrice > 0)) {
-      throw new functions.https.HttpsError(
-        "invalid-argument",
-        `سعر المنتج غير صالح: ${productId}`,
-      );
-    }
-    subtotal += unitPrice * quantity;
-  }
-
-  // Shipping from settings/store (shipping sub-object). Free shipping if the
-  // subtotal reaches the configured threshold.
-  let shippingCost = 0;
-  try {
-    const settingsDoc = await settingsRef(storeId, "store").get();
-    const shipping = settingsDoc.data()?.shipping;
-    if (shipping) {
-      const threshold = Number(shipping.freeShippingThreshold ?? 0);
-      const defaultCost = Number(shipping.defaultShippingCost ?? 0);
-      const freeEnabled = shipping.enableFreeShipping !== false;
-      if (freeEnabled && threshold > 0 && subtotal >= threshold) {
-        shippingCost = 0;
-      } else {
-        shippingCost = defaultCost;
-      }
-    }
-  } catch (e) {
-    console.error("validateOrderAmount: failed to read shipping settings", e);
-  }
-
-  const expectedTotal = Math.round((subtotal + shippingCost) * 100) / 100;
-  const submitted = Number(clientAmount);
-
-  if (Math.abs(expectedTotal - submitted) > 0.01) {
-    console.error(
-      `Order amount mismatch: client=${submitted} expected=${expectedTotal}`,
-    );
-    throw new functions.https.HttpsError(
-      "failed-precondition",
-      "المبلغ المُرسل لا يطابق إجمالي الطلب المحسوب",
-    );
-  }
-
-  return expectedTotal;
+  // الحساب نفسه انتقل إلى orderPricing.ts ليتشاركه مسار بوابات الدفع، الذي
+  // يحتاج التفصيل (الأصناف، الشحن، حصّة الضريبة) وليس الإجمالي فقط. مصدر
+  // واحد للتسعير: أي اختلاف هنا يعني دفعة بمبلغ خاطئ.
+  const pricing = await computeOrderPricing(storeId, items);
+  return validateOrderAmountFromPricing(pricing, clientAmount);
 }
 
 /**
@@ -2822,9 +2738,11 @@ export const authSendLoginOtp = functions.https.onCall(
 
     if (!result.success) {
       await ref.delete().catch(() => undefined);
+      // السبب يظهر للمستخدم عمداً: بدونه يصبح الفشل صندوقاً أسود (سجلات
+      // الدوال قد لا تكون متاحة)، والرسالة تخص إعداد البريد لا بيانات أحد.
       throw new functions.https.HttpsError(
         "internal",
-        "تعذّر إرسال رمز التحقق إلى بريدك. حاول لاحقاً أو راجع صاحب المتجر.",
+        `تعذّر إرسال رمز التحقق: ${result.error || "سبب غير معروف"}`,
       );
     }
 
@@ -2925,3 +2843,30 @@ export const authClearOtpGate = functions.https.onCall(
     return { verified: true };
   },
 );
+
+// ==================== بوابات الدفع (MIS Pay / Madfu / neoleap) ====================
+// مجموعة واحدة من الدوال لكل البوابات، تختار المحوّل من خريطة مغلقة على
+// الخادم. المساعدات تُمرَّر هنا بدل تصديرها، فلا تتغيّر أي نقطة تحقّق قائمة.
+// نمط Tabby/Tamara فوق لم يُمَس وما زال مخفيّاً عن واجهة العميل.
+const paymentGatewayFns = buildPaymentGatewayFunctions({
+  requireStoreId,
+  requireStoreAdmin,
+  parseStoreIdParam,
+});
+
+export const paymentGatewaySaveSettings =
+  paymentGatewayFns.paymentGatewaySaveSettings;
+export const paymentGatewayTestConnection =
+  paymentGatewayFns.paymentGatewayTestConnection;
+export const paymentGatewayGetStatus = paymentGatewayFns.paymentGatewayGetStatus;
+export const paymentGatewaySetEnabled =
+  paymentGatewayFns.paymentGatewaySetEnabled;
+export const paymentGatewayCreateCheckout =
+  paymentGatewayFns.paymentGatewayCreateCheckout;
+export const paymentGatewayResolveReturn =
+  paymentGatewayFns.paymentGatewayResolveReturn;
+export const mispayReturn = paymentGatewayFns.mispayReturn;
+export const mispayWebhook = paymentGatewayFns.mispayWebhook;
+export const madfuWebhook = paymentGatewayFns.madfuWebhook;
+export const neoleapReturn = paymentGatewayFns.neoleapReturn;
+export const paymentReconcileSweep = paymentGatewayFns.paymentReconcileSweep;

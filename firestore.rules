@@ -77,12 +77,24 @@ service cloud.firestore {
       // Note: writes are handled server-side by the Admin SDK (Cloud Functions),
       // which bypasses these rules. Admin read is kept so the dashboard settings
       // pages can display saved values.
+      //
+      // paymentGateways is the public, secret-free mirror of each payment
+      // gateway's state (enabled / connected / environment / minimum). The
+      // storefront decides whether to show a gateway from it, so
+      // "connected: true" must be a claim only the Admin SDK can make, and
+      // only right after a real network probe succeeded. An admin can still
+      // write their keys, but cannot fake a working gateway on the storefront.
       match /settings/store {
         allow read: if true;
-        allow write: if isStoreAdmin(storeId);
+        allow write: if isStoreAdmin(storeId)
+          && (resource == null
+                ? !('paymentGateways' in request.resource.data)
+                : !request.resource.data.diff(resource.data)
+                     .affectedKeys().hasAny(['paymentGateways']));
       }
-      // Any other settings doc (email, tabby, tamara, cjDropshipping,
-      // googleMerchant, ...) is admin-only, and only for this store's admin.
+      // Any other settings doc (email, tabby, tamara, mispay, madfu, neoleap,
+      // cjDropshipping, googleMerchant, ...) is admin-only, and only for this
+      // store's admin. These hold provider credentials and cached tokens.
       match /settings/{settingId} {
         allow read: if isStoreAdmin(storeId);
         allow write: if isStoreAdmin(storeId);

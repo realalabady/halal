@@ -124,9 +124,24 @@ export interface FirestoreOrder {
   paymentMethod: string;
   /** طريقة الاستلام: توصيل للعنوان أو استلام من الفرع */
   fulfillment?: "delivery" | "pickup";
-  paymentStatus?: "pending" | "paid";
+  paymentStatus?: "pending" | "paid" | "failed";
   paypalOrderId?: string;
   paypalCaptureId?: string;
+  /** تكتبها الدوال لكن كانت غائبة عن هذا النوع */
+  tabbyPaymentId?: string;
+  tamaraOrderId?: string;
+  /** بوابات الدفع الجديدة: ثلاثية عامة بدل حقل لكل مزوّد */
+  gateway?: GatewayId;
+  /** مرجعنا للطلب، وهو نفسه معرّف المستند */
+  gatewayRef?: string;
+  /** مرجع المزوّد: trackId / invoiceCode / trackId */
+  gatewayProviderRef?: string;
+  gatewayStatusCode?: string;
+  /**
+   * الطلب دُفع لكن المخزون لم يكن كافياً وقت المصالحة.
+   * الطلب المدفوع لا يُسقَط أبداً، فيُعلَّم ويُنبَّه صاحب المتجر.
+   */
+  stockShortfall?: boolean;
   paidAt?: Date;
   shippingAddress: string;
   address?: {
@@ -226,6 +241,10 @@ export type Order = FirestoreOrder;
 // ==================== Users ====================
 
 import type { User } from "../types";
+import type {
+  GatewayId,
+  PublicGatewayStatusMap,
+} from "../constants/paymentGateways";
 
 export const usersCollection = storeCol("users");
 
@@ -406,7 +425,15 @@ export interface StoreSettings {
   };
   payment?: {
     methods: { id: string; name: string; enabled: boolean }[];
+    /** نسبة الضريبة المضمّنة في الأسعار المعروضة (١٥ مثلاً). غيابها = لا ضريبة مُصرَّح بها */
+    vatRate?: number;
   };
+  /**
+   * الحالة العامة الخالية من الأسرار لبوابات الدفع.
+   * يكتبها Admin SDK وحده — قاعدة settings/store ترفض أي كتابة أدمن تلمس
+   * هذا الحقل — فـ connected: true لا يصدر إلا بعد اختبار شبكي حقيقي.
+   */
+  paymentGateways?: PublicGatewayStatusMap;
   updatedAt?: Date;
 }
 

@@ -19,6 +19,8 @@ import {
 } from "../../services/firestore";
 import { saveTamaraSettings, testTamaraConnection } from "../../services/tamara";
 import { saveTabbySettings, testTabbyConnection } from "../../services/tabby";
+import GatewaySettingsCard from "../../components/GatewaySettingsCard/GatewaySettingsCard";
+import { PAYMENT_GATEWAYS } from "../../constants/paymentGateways";
 import {
   updatePassword,
   EmailAuthProvider,
@@ -759,6 +761,13 @@ const Settings: React.FC = () => {
                     <p className="success-text">✓ متصل بتابي</p>
                   )}
                 </div>
+
+                {/* بوابات الدفع السعودية: بطاقة واحدة لكل بوابة، مدفوعة
+                    بالسجل. لا تظهر أي بوابة للعميل إلا بعد نجاح اختبار
+                    اتصال حقيقي يسجّله الخادم. */}
+                {PAYMENT_GATEWAYS.map((gateway) => (
+                  <GatewaySettingsCard key={gateway.id} gateway={gateway} />
+                ))}
               </div>
             </div>
           )}

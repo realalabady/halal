@@ -7,7 +7,9 @@
     "shell": "npm run build && firebase functions:shell",
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
-    "logs": "firebase functions:log"
+    "logs": "firebase functions:log",
+    "verify:gateways": "npm run build && node scripts/verify-gateways.js",
+    "verify:gateways:emulator": "npm run build && firebase emulators:exec --only firestore --project demo-gateways \"node scripts/verify-gateways.js\""
   },
   "engines": {
     "node": "22"

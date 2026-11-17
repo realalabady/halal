@@ -100,6 +100,9 @@ export const sendLoginOtpEmail = async (
   const subject = `رمز تسجيل الدخول: ${code}`;
   const html = buildOtpTemplate(code, storeName, expiresInMinutes);
 
+  // سبب فشل SMTP يُحفظ ليظهر في الرسالة النهائية إن فشل المساران.
+  let smtpError = "إعدادات SMTP للمتجر غير مكتملة";
+
   // 1) SMTP الخاص بالمتجر
   const settings = await getEmailSettings(storeId);
   if (settings) {
@@ -121,6 +124,7 @@ export const sendLoginOtpEmail = async (
       return { success: true, via: "smtp" };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
+      smtpError = `SMTP: ${message}`;
       console.error("OTP email via SMTP failed, trying Resend:", message);
     }
   }
@@ -151,7 +155,6 @@ export const sendLoginOtpEmail = async (
 
   return {
     success: false,
-    error:
-      "لا توجد إعدادات بريد (SMTP للمتجر أو RESEND_API_KEY) لإرسال رمز التحقق",
+    error: `${smtpError}، و RESEND_API_KEY غير مضبوط في الدوال`,
   };
 };

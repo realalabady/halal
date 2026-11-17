@@ -1,0 +1,21 @@
+/*
+ * صندوق ثابت العرض حتى تتراصف العلامات العريضة والمربّعة في عمود واحد.
+ * الصفحة dir="rtl" فالصف يُعكس تلقائياً — ولا نعكس العلامات التجارية أبداً
+ * (لا transform: scaleX(-1) هنا بأي حال).
+ */
+
+.payment-logo-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 72px;
+  height: 28px;
+}
+
+.payment-logo {
+  height: 28px;
+  width: auto;
+  max-width: 72px;
+  object-fit: contain;
+}

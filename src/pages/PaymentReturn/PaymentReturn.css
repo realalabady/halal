@@ -1,0 +1,88 @@
+.payment-return-page {
+  min-height: 60vh;
+  display: flex;
+  align-items: center;
+  padding: 3rem 1rem;
+}
+
+.payment-return-card {
+  max-width: 540px;
+  margin: 0 auto;
+  padding: 2.5rem 1.75rem;
+  text-align: center;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+
+.payment-return-card h1 {
+  margin: 1rem 0 0.75rem;
+  font-size: 1.375rem;
+}
+
+.payment-return-card .spinner {
+  animation: payment-return-spin 1s linear infinite;
+  color: var(--primary);
+}
+
+@keyframes payment-return-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .payment-return-card .spinner {
+    animation-duration: 3s;
+  }
+}
+
+.payment-return-card.phase-pending svg {
+  color: #f5a623;
+}
+
+.payment-return-card.phase-failed svg,
+.payment-return-card.phase-error svg {
+  color: var(--danger, #e5484d);
+}
+
+.payment-return-message {
+  margin: 0 auto 0.75rem;
+  max-width: 42ch;
+  line-height: 1.85;
+  color: var(--text, inherit);
+}
+
+.payment-return-provider {
+  margin: 0 0 1.5rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary, #6b7280);
+}
+
+.payment-return-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.payment-return-hint {
+  margin: 1.25rem 0 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary, #6b7280);
+}
+
+@media (max-width: 520px) {
+  .payment-return-card {
+    padding: 2rem 1.25rem;
+  }
+
+  .payment-return-actions {
+    flex-direction: column;
+  }
+
+  .payment-return-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}

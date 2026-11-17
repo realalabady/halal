@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
   MapPin,
@@ -9,7 +9,6 @@ import {
   Check,
   Loader,
   AlertCircle,
-  Clock,
   Store,
 } from "lucide-react";
 import { useStore } from "../../store/useStore";
@@ -17,6 +16,16 @@ import { addOrder, getSettings } from "../../services/firestore";
 import Header from "../../components/Header/Header";
 import Footer from "../../components/Footer/Footer";
 import { useToast } from "../../components/Toast/Toast";
+import PaymentMethodMedia from "../../components/PaymentMethodMedia/PaymentMethodMedia";
+import {
+  HIDDEN_METHOD_IDS,
+  MANUAL_METHOD_IDS,
+  PAYMENT_GATEWAYS,
+  isGatewayId,
+  paymentMethodDescription,
+} from "../../constants/paymentGateways";
+import type { PublicGatewayStatusMap } from "../../constants/paymentGateways";
+import { createGatewayCheckout } from "../../services/paymentGateways";
 import "./Checkout.css";
 
 interface ShippingSettings {
@@ -32,8 +41,10 @@ interface PaymentMethod {
   enabled: boolean;
 }
 
-// طرق الدفع المسموح بها للعميل. تمارا/تابي/باي بال أُخفيت من واجهة العميل.
-const ALLOWED_METHOD_IDS = ["cash", "bank", "emkan"] as const;
+// الطرق اليدوية التي ينفّذها المتجر بنفسه، وسلوكها لم يتغيّر.
+// بوابات الدفع (MIS Pay / Madfu / neoleap) تأتي من السجل ولا تظهر إلا بعد
+// أن يسجّل الخادم نجاح اختبار اتصال حقيقي — انظر gatewayFilter أدناه.
+const ALLOWED_METHOD_IDS = MANUAL_METHOD_IDS;
 
 const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
   { id: "cash", name: "الدفع عند الاستلام", enabled: true },
@@ -54,9 +65,12 @@ const Checkout: React.FC = () => {
     enableFreeShipping: true,
     estimatedDays: "3-5",
   });
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(
+  // الطرق اليدوية المحفوظة في الإعدادات
+  const [manualMethods, setManualMethods] = useState<PaymentMethod[]>(
     DEFAULT_PAYMENT_METHODS
   );
+  // الحالة العامة للبوابات، كما يكتبها الخادم في settings/store
+  const [gatewayStatus, setGatewayStatus] = useState<PublicGatewayStatusMap>({});
 
   const [formData, setFormData] = useState({
     fullName: "",
@@ -104,9 +118,16 @@ const Checkout: React.FC = () => {
               });
             }
             if (allowed.length > 0) {
-              setPaymentMethods(allowed);
+              setManualMethods(allowed);
             }
           }
+          // النسخة العامة الخالية من الأسرار. تُقرأ هنا في كل زيارة ولا
+          // تمرّ عبر zustand: المخزن يستخدم persist، فبوابة أُلغي اتصالها
+          // كانت ستبقى ظاهرة لزائر عائد من الـ localStorage.
+          setGatewayStatus(
+            (settings as { paymentGateways?: PublicGatewayStatusMap })
+              .paymentGateways || {},
+          );
         }
       } catch (error) {
         console.error("Error fetching settings:", error);
@@ -154,6 +175,56 @@ const Checkout: React.FC = () => {
       ? 0
       : shippingSettings.defaultShippingCost;
   const total = subtotal + shipping;
+
+  /**
+   * طرق الدفع المعروضة للعميل.
+   *
+   * البوابة تظهر فقط إذا توفّرت كل هذه الشروط معاً:
+   *   عضوية السجل ∧ ليست في قائمة المُخفاة ∧ connected من الخادم ∧ مفعّلة
+   *   ∧ إجمالي السلة ≥ الحد الأدنى للمزوّد.
+   *
+   * تمارا/تابي/باي بال تبقى مخفيّة لسببين مستقلّين — وجودها في
+   * HIDDEN_METHOD_IDS *وعدم* وجود وصف لها في السجل — فتعديل قائمة واحدة لا
+   * يُعيدها بالخطأ. والاعتماد على settings.payment.methods وحدها كان سيُظهرها
+   * لحظة أن يبدّل الأدمن مفتاحها في اللوحة.
+   */
+  const paymentMethods = useMemo<PaymentMethod[]>(() => {
+    const manual = manualMethods.filter(
+      (m) =>
+        (ALLOWED_METHOD_IDS as readonly string[]).includes(m.id) && m.enabled,
+    );
+
+    const gateways = PAYMENT_GATEWAYS.filter(
+      (g) => !(HIDDEN_METHOD_IDS as readonly string[]).includes(g.id),
+    )
+      .map((g) => ({ gateway: g, status: gatewayStatus[g.id] }))
+      .filter(({ status }) => status?.enabled && status?.connected)
+      // الحد الأدنى تجاري لا تجميلي: سلة بـ ٩٠ ر.س تُظهر شعار MIS Pay ثم
+      // تفشل عند المزوّد هي طلب مفقود.
+      .filter(
+        ({ gateway }) =>
+          !gateway.minAmountSAR || total >= gateway.minAmountSAR,
+      )
+      .map(({ gateway }) => ({
+        id: gateway.id,
+        name: gateway.name,
+        enabled: true,
+      }));
+
+    return [...manual, ...gateways];
+  }, [manualMethods, gatewayStatus, total]);
+
+  // إن اختفت الطريقة المختارة (نزل الإجمالي تحت الحد، أو عُطّلت البوابة)
+  // نرجع إلى أول طريقة متاحة بدل إرسال طريقة لم تعد معروضة.
+  useEffect(() => {
+    if (paymentMethods.length === 0) return;
+    if (!paymentMethods.some((m) => m.id === formData.paymentMethod)) {
+      setFormData((prev) => ({
+        ...prev,
+        paymentMethod: paymentMethods[0].id,
+      }));
+    }
+  }, [paymentMethods, formData.paymentMethod]);
 
   const validateStep1 = () => {
     const newErrors: Record<string, string> = {};
@@ -208,6 +279,49 @@ const Checkout: React.FC = () => {
         return;
       }
 
+      const shippingAddressText = isPickup
+        ? `استلام من الفرع${storeInfo.storeAddress ? `: ${storeInfo.storeAddress}` : ""}`
+        : `${formData.city}، ${formData.district}، ${formData.street}${formData.building ? `، مبنى ${formData.building}` : ""}${formData.nationalAddress ? `، العنوان الوطني: ${formData.nationalAddress}` : ""}`;
+
+      // ===== مسار بوابة الدفع =====
+      // لا يُنشأ مستند الطلب هنا: onOrderCreated يخصم المخزون ويُرسل
+      // "تم استلام طلبك"، فطلب يُكتب قبل الدفع يعني رسالة تأكيد لسلّة قد لا
+      // تُدفع ومخزوناً يُستهلك مع كل تحويل مهجور. الخادم يحفظ مسوّدة الطلب
+      // في pending_payments، وينشئ الطلب بعد تأكيد الدفع فقط.
+      if (isGatewayId(formData.paymentMethod)) {
+        const { redirectUrl, orderRef } = await createGatewayCheckout({
+          gateway: formData.paymentMethod,
+          // للتحقق فقط: الخادم يعيد حساب الأسعار من مستندات المنتجات
+          items: cart.map((item) => ({
+            productId: item.product.id,
+            quantity: item.quantity,
+          })),
+          total,
+          customer: formData.fullName,
+          email: user.email,
+          phone: formData.phone,
+          fulfillment: formData.fulfillment,
+          shippingAddress: shippingAddressText,
+          address: {
+            city: isPickup ? "" : formData.city,
+            district: isPickup ? "" : formData.district,
+            street: isPickup ? "" : formData.street,
+            building: isPickup ? "" : formData.building,
+            nationalAddress: isPickup ? "" : formData.nationalAddress,
+          },
+          notes: formData.notes,
+        });
+
+        // السلّة تبقى كما هي: من يُلغي عند المزوّد يعود ويجدها.
+        // صفحة العودة هي التي تُفرغها بعد تأكيد الدفع.
+        sessionStorage.setItem(
+          "pendingGatewayPayment",
+          JSON.stringify({ gateway: formData.paymentMethod, orderRef }),
+        );
+        window.location.assign(redirectUrl);
+        return;
+      }
+
       const isEmkan = formData.paymentMethod === "emkan";
 
       const orderData = {
@@ -230,9 +344,7 @@ const Checkout: React.FC = () => {
         // إمكان: الطلب معلّق حتى يدفع العميل عبر الرابط الذي يرسله المتجر.
         ...(isEmkan ? { paymentStatus: "pending" as const } : {}),
         fulfillment: formData.fulfillment,
-        shippingAddress: isPickup
-          ? `استلام من الفرع${storeInfo.storeAddress ? `: ${storeInfo.storeAddress}` : ""}`
-          : `${formData.city}، ${formData.district}، ${formData.street}${formData.building ? `، مبنى ${formData.building}` : ""}${formData.nationalAddress ? `، العنوان الوطني: ${formData.nationalAddress}` : ""}`,
+        shippingAddress: shippingAddressText,
 
         address: {
           fullName: formData.fullName,
@@ -593,33 +705,32 @@ const Checkout: React.FC = () => {
                                 }
                               />
                               <div className="option-content">
-                                {method.id === "cash" &&
-                                  (isPickup ? (
-                                    <Store size={24} />
-                                  ) : (
-                                    <Truck size={24} />
-                                  ))}
-                                {method.id === "bank" && (
-                                  <CreditCard size={24} />
+                                {/* الدفع عند الاستلام وحده يغيّر أيقونته
+                                    حسب التوصيل أو الاستلام من الفرع؛ بقية
+                                    الطرق (والبوابات بشعاراتها) من السجل. */}
+                                {method.id === "cash" ? (
+                                  <span className="payment-logo-wrap">
+                                    {isPickup ? (
+                                      <Store size={24} aria-hidden="true" />
+                                    ) : (
+                                      <Truck size={24} aria-hidden="true" />
+                                    )}
+                                  </span>
+                                ) : (
+                                  <PaymentMethodMedia
+                                    methodId={method.id}
+                                    size={24}
+                                  />
                                 )}
-                                {method.id === "emkan" && <Clock size={24} />}
                                 <div>
                                   <strong>{method.name}</strong>
-                                  {method.id === "cash" && (
-                                    <span>
-                                      {isPickup
+                                  <span>
+                                    {method.id === "cash"
+                                      ? isPickup
                                         ? "ادفع نقداً عند استلام طلبك من الفرع"
-                                        : "ادفع نقداً عند استلام طلبك"}
-                                    </span>
-                                  )}
-                                  {method.id === "bank" && (
-                                    <span>تحويل إلى الحساب البنكي</span>
-                                  )}
-                                  {method.id === "emkan" && (
-                                    <span>
-                                      قسّم فاتورتك على 5 دفعات عبر إمكان
-                                    </span>
-                                  )}
+                                        : "ادفع نقداً عند استلام طلبك"
+                                      : paymentMethodDescription(method.id)}
+                                  </span>
                                 </div>
                               </div>
                             </label>
@@ -696,8 +807,12 @@ const Checkout: React.FC = () => {
                       {loading ? (
                         <>
                           <Loader className="spinner" size={18} />
-                          جاري إرسال الطلب...
+                          {isGatewayId(formData.paymentMethod)
+                            ? "جاري تحويلك لبوابة الدفع..."
+                            : "جاري إرسال الطلب..."}
                         </>
+                      ) : isGatewayId(formData.paymentMethod) ? (
+                        `المتابعة للدفع - ${formatPrice(total)}`
                       ) : formData.paymentMethod === "emkan" ? (
                         `تأكيد الطلب (قيد الانتظار) - ${formatPrice(total)}`
                       ) : (

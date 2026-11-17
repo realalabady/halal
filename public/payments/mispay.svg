@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 70" role="img" aria-label="MIS Pay">
+  <!-- شعار نصّي مؤقّت. استبدله بالملف الرسمي من حزمة علامة المزوّد. -->
+  <title>MIS Pay</title>
+  <rect width="160" height="70" rx="10" fill="#ffffff"/>
+  <rect x="1" y="1" width="158" height="68" rx="9" fill="none" stroke="#0c2d57" stroke-opacity="0.28" stroke-width="2"/>
+  <text x="80" y="41" text-anchor="middle" font-family="Tajawal, Segoe UI, Helvetica, Arial, sans-serif" font-size="25" font-weight="700" fill="#0c2d57">MIS Pay</text>
+</svg>

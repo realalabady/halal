@@ -24,6 +24,7 @@ const DashboardLayout = lazy(() => import("./components/DashboardLayout/Dashboar
 const Home = lazy(() => import("./pages/Home/Home"));
 const Cart = lazy(() => import("./pages/Cart/Cart"));
 const Checkout = lazy(() => import("./pages/Checkout/Checkout"));
+const PaymentReturn = lazy(() => import("./pages/PaymentReturn/PaymentReturn"));
 const Login = lazy(() => import("./pages/Login/Login"));
 const Register = lazy(() => import("./pages/Register/Register"));
 const ProductsPage = lazy(() => import("./pages/Products/Products"));
@@ -219,6 +220,9 @@ const App: React.FC = () => {
           }
         />
         <Route path="/checkout" element={<Checkout />} />
+        {/* العودة من بوابة الدفع. الصفحة تحمل Header/Footer بنفسها
+            مثل Checkout، فلا تُغلّف بـ StoreLayout. */}
+        <Route path="/payment/return/:gateway" element={<PaymentReturn />} />
         <Route
           path="/order-confirmation/:orderId"
           element={
