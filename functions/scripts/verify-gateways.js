@@ -253,10 +253,24 @@ function pureTests() {
   console.log("\nالسجل");
   const registry = require("../lib/gatewayRegistry");
 
-  check("السجل يحمل البوابات الثلاث", () => {
-    for (const id of ["mispay", "madfu", "neoleap"]) {
+  check("السجل يحمل البوابات الخمس", () => {
+    for (const id of ["mispay", "madfu", "neoleap", "tamara", "tabby"]) {
       assert(registry.GATEWAY_ADAPTERS[id], `البوابة ${id} غير مسجّلة`);
     }
+  });
+
+  check("تمارا وتابي لم تعودا مخفيّتين عن العميل", () => {
+    // الحجب في الواجهة، لكن غياب المحوّل كان الحاجز الثاني.
+    assert(registry.GATEWAY_ADAPTERS.tamara, "محوّل تمارا مفقود");
+    assert(registry.GATEWAY_ADAPTERS.tabby, "محوّل تابي مفقود");
+    assert(
+      registry.secretFieldsOf("tabby").includes("secretKey"),
+      "المفتاح السرّي لتابي يجب أن يكون مُقنّعاً",
+    );
+    assert(
+      !registry.secretFieldsOf("tabby").includes("publicKey"),
+      "المفتاح العام لتابي ليس سرّاً",
+    );
   });
 
   check("كل محوّل يستوفي العقد", () => {
@@ -315,6 +329,34 @@ function pureTests() {
       !store.maskSecret("sk_live_abcd1234").includes("live"),
       "لا يتسرّب جزء من السرّ",
     );
+  });
+
+  check("عنوان الاستلام من الفرع يُشتقّ من عنوان المتجر", () => {
+    // البوابات ترفض مدينة أو عنواناً فارغاً، والاستلام من الفرع يُفرغهما.
+    const full = api.resolvePickupAddress(
+      "الرياض، حي النخيل، شارع الأمير",
+      "حلالي",
+    );
+    assertEqual(full.city, "الرياض", "المدينة");
+    assertEqual(full.district, "حي النخيل", "الحي");
+    assert(full.street.includes("شارع الأمير"), "الشارع");
+
+    const twoParts = api.resolvePickupAddress("جدة، الحمراء", "حلالي");
+    assertEqual(twoParts.city, "جدة", "مدينة من جزأين");
+    assertEqual(twoParts.district, "الحمراء", "حي من جزأين");
+
+    const onePart = api.resolvePickupAddress("الدمام", "حلالي");
+    assertEqual(onePart.city, "الدمام", "مدينة مفردة");
+    assert(onePart.street, "الشارع لا يكون فارغاً");
+
+    // لا عنوان متجر إطلاقاً: نرجع لاسم المتجر، ولا نُرسل فراغاً أبداً
+    const empty = api.resolvePickupAddress("", "حلالي");
+    assertEqual(empty.city, "حلالي", "بديل المدينة");
+    assert(empty.street, "بديل الشارع");
+    for (const value of Object.values(empty)) {
+      assert(typeof value === "string", "كل الحقول نصوص");
+    }
+    assert(empty.city.length > 0, "المدينة لا تكون فارغة");
   });
 
   check("ترقيم الجوال السعودي يُوحّد الأشكال", () => {
@@ -794,21 +836,157 @@ async function emulatorTests() {
     );
   });
 
+  await checkAsync(
+    "مفاتيح تمارا/تابي القديمة في جذر المستند ما زالت تُقرأ",
+    async () => {
+      // tamaraSaveSettings القديمة تكتب apiToken في الجذر لا داخل credentials.
+      // بدون التوافق الخلفي تفقد المتاجر المُعدّة مفاتيحها عند الترحيل.
+      await db
+        .doc(`stores/${STORE}/settings/tamara`)
+        .set({ apiToken: "legacy-tamara-token" });
+      const tamara = registry.GATEWAY_ADAPTERS.tamara;
+      const loaded = await store.loadGatewayCredentials(STORE, tamara);
+      assertEqual(loaded.creds.apiToken, "legacy-tamara-token", "مفتاح تمارا");
+
+      await db
+        .doc(`stores/${STORE}/settings/tabby`)
+        .set({ publicKey: "pk_legacy", secretKey: "sk_legacy" });
+      const tabby = registry.GATEWAY_ADAPTERS.tabby;
+      const tabbyCreds = await store.loadGatewayCredentials(STORE, tabby);
+      assertEqual(tabbyCreds.creds.publicKey, "pk_legacy", "المفتاح العام");
+      assertEqual(tabbyCreds.creds.secretKey, "sk_legacy", "المفتاح السرّي");
+
+      // والعرض الإداري يقنّع السرّي منهما فقط
+      const view = await store.readGatewayAdminView(
+        STORE,
+        tabby,
+        registry.secretFieldsOf("tabby"),
+      );
+      assertEqual(view.fields.publicKey, "pk_legacy", "العام يظهر كما هو");
+      assertEqual(view.fields.secretKey, "••••gacy", "السرّي مُقنّع");
+    },
+  );
+
+  await checkAsync(
+    "مستند قديم بلا حقل بيئة يُعامل كإنتاج لا كتجربة",
+    async () => {
+      // العميل القديم كان يستخدم مضيف الإنتاج دائماً. افتراض "تجربة" هنا
+      // يُرسل مفتاح إنتاج إلى مضيف التجربة فيفشل برسالة مُضلِّلة.
+      await db
+        .doc(`stores/${STORE}/settings/tamara`)
+        .set({ apiToken: "legacy-token" });
+      const legacy = await store.loadGatewayCredentials(
+        STORE,
+        registry.GATEWAY_ADAPTERS.tamara,
+      );
+      assertEqual(legacy.environment, "production", "بيئة المستند القديم");
+
+      // بوابة غير مُعدّة إطلاقاً يجب أن تكون تجربة، لا إنتاجاً:
+      // مستند فارغ ليس "مستنداً قديماً".
+      await db.doc(`stores/${STORE}/settings/tamara`).set({});
+      const empty = await store.loadGatewayCredentials(
+        STORE,
+        registry.GATEWAY_ADAPTERS.tamara,
+      ).catch((error) => error);
+      // بلا مفاتيح يرمي خطأ إعداد، فنقرأ البيئة من العرض الإداري بدلاً منه
+      const emptyView = await store.readGatewayAdminView(
+        STORE,
+        registry.GATEWAY_ADAPTERS.tamara,
+        [],
+      );
+      assertEqual(emptyView.environment, "sandbox", "بوابة فارغة = تجربة");
+      assert(empty instanceof Error, "بلا مفاتيح يرمي خطأ إعداد");
+
+      // أما المستند بالشكل الجديد فبيئته الافتراضية تجربة
+      await db
+        .doc(`stores/${STORE}/settings/tamara`)
+        .set({ credentials: { apiToken: "new-token" } });
+      const modern = await store.loadGatewayCredentials(
+        STORE,
+        registry.GATEWAY_ADAPTERS.tamara,
+      );
+      assertEqual(modern.environment, "sandbox", "بيئة الشكل الجديد");
+
+      // والحقل الصريح يفوز دائماً
+      await db
+        .doc(`stores/${STORE}/settings/tamara`)
+        .set({ apiToken: "t", environment: "sandbox" });
+      const explicit = await store.loadGatewayCredentials(
+        STORE,
+        registry.GATEWAY_ADAPTERS.tamara,
+      );
+      assertEqual(explicit.environment, "sandbox", "الحقل الصريح");
+    },
+  );
+
+  await checkAsync("الشكل الجديد يسبق الجذر عند وجود الاثنين", async () => {
+    await db
+      .doc(`stores/${STORE}/settings/tamara`)
+      .set({ apiToken: "root-old", credentials: { apiToken: "nested-new" } });
+    const loaded = await store.loadGatewayCredentials(
+      STORE,
+      registry.GATEWAY_ADAPTERS.tamara,
+    );
+    assertEqual(loaded.creds.apiToken, "nested-new", "الأحدث يفوز");
+  });
+
   await checkAsync("سياق النداء يُشتقّ من نطاق المتجر لا من العميل", async () => {
     const ctx = await store.buildGatewayContext(STORE, "sandbox");
     assertEqual(ctx.baseUrl, "https://shop.test", "النطاق من مستند المتجر");
     assertEqual(ctx.storeId, STORE, "المتجر");
   });
 
-  await checkAsync("متجر بلا نطاق يرفع خطأ إعداد واضحاً", async () => {
-    await db.doc("stores/nodomain").set({ name: "x", active: true });
-    let message = "";
-    try {
-      await store.buildGatewayContext("nodomain", "sandbox");
-    } catch (error) {
-      message = error.message;
-    }
-    assert(message.includes("domain"), `رسالة غير متوقّعة: ${message}`);
+  await checkAsync(
+    "متجر بلا رابط: الاختبار ممكن، وإنشاء الدفع وحده يُمنع",
+    async () => {
+      // اختبار الاتصال لا يحتاج رابط عودة. رمي الخطأ عند بناء السياق كان
+      // يمنع الأدمن من اختبار مفاتيحه أصلاً، فالخطأ انتقل إلى نقطة
+      // الاستعمال الحقيقية.
+      await db.doc("stores/nodomain").set({ name: "x", active: true });
+
+      const ctx = await store.buildGatewayContext("nodomain", "sandbox");
+      assertEqual(ctx.baseUrl, "", "الرابط فارغ بلا رمي خطأ");
+      assertEqual(ctx.storeId, "nodomain", "المتجر");
+
+      let message = "";
+      try {
+        store.requireStorefrontBaseUrl(ctx);
+      } catch (error) {
+        message = error.message;
+      }
+      assert(
+        message.includes("رابط المتجر"),
+        `رسالة غير متوقّعة: ${message}`,
+      );
+    },
+  );
+
+  await checkAsync("رابط المتجر يُقرأ من إعدادات اللوحة أيضاً", async () => {
+    // جذر المتجر يملؤه سكربت الإنشاء، أما حقل اللوحة فيملؤه الأدمن بنفسه.
+    await db.doc("stores/urlfromsettings").set({ name: "y", active: true });
+    await db
+      .doc("stores/urlfromsettings/settings/store")
+      .set({ store: { storeUrl: "https://from-settings.test/" } });
+
+    const ctx = await store.buildGatewayContext("urlfromsettings", "sandbox");
+    assertEqual(
+      ctx.baseUrl,
+      "https://from-settings.test",
+      "الرابط من الإعدادات بلا شرطة أخيرة",
+    );
+    assertEqual(
+      store.requireStorefrontBaseUrl(ctx),
+      "https://from-settings.test",
+      "يمرّ التحقّق",
+    );
+  });
+
+  await checkAsync("جذر المتجر يسبق حقل الإعدادات", async () => {
+    await db
+      .doc("stores/urlfromsettings")
+      .set({ name: "y", active: true, domain: "https://root.test" });
+    const ctx = await store.buildGatewayContext("urlfromsettings", "sandbox");
+    assertEqual(ctx.baseUrl, "https://root.test", "الجذر يفوز");
   });
 }
 

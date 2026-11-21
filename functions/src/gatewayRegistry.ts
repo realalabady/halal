@@ -12,11 +12,18 @@ import type { GatewayAdapter } from "./gatewayTypes";
 import { misPayAdapter } from "./mispayClient";
 import { madfuAdapter } from "./madfuClient";
 import { neoleapAdapter } from "./neoleapClient";
+import { tabbyAdapter } from "./tabbyAdapter";
+import { tamaraAdapter } from "./tamaraAdapter";
 
 export const GATEWAY_ADAPTERS: Record<string, GatewayAdapter> = {
   [misPayAdapter.id]: misPayAdapter,
   [madfuAdapter.id]: madfuAdapter,
   [neoleapAdapter.id]: neoleapAdapter,
+  // تمارا وتابي انتقلتا إلى السجل ليظهرا للعميل عبر نفس المسار المتحقَّق
+  // منه (اتصال مُختبَر + مصالحة خادم-إلى-خادم). ملفّاهما القديمان
+  // tamaraClient.ts / tabbyClient.ts باقيان للدوال القديمة دون تغيير.
+  [tamaraAdapter.id]: tamaraAdapter,
+  [tabbyAdapter.id]: tabbyAdapter,
 };
 
 /** الحقول السرّية لكل بوابة: لا تُرجَع للوحة التحكم إلا مُقنّعة. */
@@ -24,6 +31,8 @@ export const GATEWAY_SECRET_FIELDS: Record<string, readonly string[]> = {
   mispay: ["appSecret"],
   madfu: ["basicToken", "password"],
   neoleap: ["tranportalPassword", "resourceKey", "iv"],
+  tamara: ["apiToken"],
+  tabby: ["secretKey"],
 };
 
 /** يُرجع المحوّل أو يرفع خطأ نداء واضحاً. */

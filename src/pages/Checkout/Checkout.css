@@ -940,3 +940,22 @@
     flex-wrap: wrap;
   }
 }
+
+/* لا توجد طريقة دفع مفعّلة: حالة صريحة بدل قائمة فارغة صامتة */
+.payment-empty {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: 10px;
+  border-inline-start: 3px solid #f5a623;
+  background: rgba(245, 166, 35, 0.1);
+  font-size: 0.9375rem;
+  line-height: 1.7;
+}
+
+.payment-empty svg {
+  flex: 0 0 auto;
+  color: #f5a623;
+}

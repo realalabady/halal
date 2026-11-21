@@ -11,7 +11,7 @@ import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import { randomUUID } from "crypto";
 
-import { pendingPaymentRef, pendingPaymentsCol } from "./storePaths";
+import { pendingPaymentRef, pendingPaymentsCol, settingsRef } from "./storePaths";
 import { requireAdapter, secretFieldsOf } from "./gatewayRegistry";
 import {
   GatewayConfigError,
@@ -21,6 +21,7 @@ import {
   markGatewayUnhealthy,
   maskSecret,
   readGatewayAdminView,
+  requireStorefrontBaseUrl,
   recordConnectionResult,
   setGatewayEnabled,
   writeGatewayCredentials,
@@ -60,6 +61,40 @@ export function normalizeSaudiMobile(raw: string): string {
   if (digits.startsWith("00966")) return `0${digits.slice(5)}`;
   if (digits.startsWith("5") && digits.length === 9) return `0${digits}`;
   return digits;
+}
+
+/**
+ * عنوان يُرسل إلى البوابة في طلبات "استلام من الفرع".
+ *
+ * المشكلة: الاستلام من الفرع يُفرغ حقول العنوان (لا يُسأل عنها العميل
+ * أصلاً)، وكل البوابات تطلب مدينة وعنواناً غير فارغين وترفض الطلب بدونها.
+ * فيكون العميل قادراً على اختيار تابي أو تمارا ثم يفشل الدفع بلا سبب ظاهر.
+ *
+ * الحل: نرسل عنوان *المتجر* — وهو العنوان الصحيح فعلاً، لأن البضاعة تُسلَّم
+ * هناك. storeAddress نصّ حر، فنقرأه بالعرف الشائع "المدينة، الحي، الشارع".
+ */
+export function resolvePickupAddress(storeAddress: string, storeName: string): {
+  city: string;
+  district: string;
+  street: string;
+} {
+  const parts = (storeAddress || "")
+    .split(/[،,]/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const fallback = storeName || "استلام من الفرع";
+  if (parts.length === 0) {
+    return { city: fallback, district: "", street: fallback };
+  }
+  if (parts.length === 1) {
+    return { city: parts[0], district: "", street: parts[0] };
+  }
+  return {
+    city: parts[0],
+    district: parts[1] || "",
+    street: parts.slice(1).join("، ") || parts[0],
+  };
 }
 
 export interface GatewayApiDeps {
@@ -268,6 +303,27 @@ export function buildPaymentGatewayFunctions(deps: GatewayApiDeps) {
       const address = (data?.address || {}) as Record<string, unknown>;
       const customerName = asString(data?.customer) || "عميل";
 
+      // الاستلام من الفرع يُفرغ عنوان العميل، والبوابات ترفض عنواناً فارغاً.
+      // نرسل عنوان المتجر لأنه موضع التسليم الحقيقي.
+      const storeSettingsSnap = await settingsRef(storeId, "store").get();
+      const storeBlock = (storeSettingsSnap.data()?.store || {}) as Record<
+        string,
+        unknown
+      >;
+      const pickupAddress = resolvePickupAddress(
+        asString(storeBlock.storeAddress),
+        asString(storeBlock.storeName),
+      );
+
+      const gatewayAddress =
+        fulfillment === "pickup"
+          ? pickupAddress
+          : {
+              city: asString(address.city),
+              district: asString(address.district),
+              street: asString(address.street),
+            };
+
       // معرّف قصير: يصبح معرّف مستند الطلب وأيضاً orderId عند المزوّد،
       // وبعض المزوّدين يحدّون طوله ومحارفه.
       const orderRef = `${adapter.id}-${randomUUID().replace(/-/g, "").slice(0, 10)}`;
@@ -319,7 +375,9 @@ export function buildPaymentGatewayFunctions(deps: GatewayApiDeps) {
       }
 
       const ctx = await buildGatewayContext(storeId, environment);
-      const returnBase = `${ctx.baseUrl}/payment/return/${adapter.id}?ref=${encodeURIComponent(orderRef)}`;
+      // هنا فقط نُلزم بوجود رابط المتجر: اختبار الاتصال لا يحتاجه.
+      const storefrontUrl = requireStorefrontBaseUrl(ctx);
+      const returnBase = `${storefrontUrl}/payment/return/${adapter.id}?ref=${encodeURIComponent(orderRef)}`;
 
       // يُكتب قبل النداء: إن نجح إنشاء الدفع عند المزوّد ثم انقطع الاتصال
       // قبل وصول الردّ، يبقى للمسح الدوري سجلّ يصالحه.
@@ -363,10 +421,11 @@ export function buildPaymentGatewayFunctions(deps: GatewayApiDeps) {
               mobile,
             },
             address: {
-              city: draft.address.city,
-              district: draft.address.district,
-              street: draft.address.street,
-              building: draft.address.building,
+              city: gatewayAddress.city,
+              district: gatewayAddress.district,
+              street: gatewayAddress.street,
+              building:
+                fulfillment === "pickup" ? "" : draft.address.building,
             },
             returnUrl: returnBase,
             cancelUrl: `${returnBase}&outcome=cancel`,

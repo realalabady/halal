@@ -43,6 +43,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GatewayConfigError = void 0;
 exports.normalizeSaudiMobile = normalizeSaudiMobile;
+exports.resolvePickupAddress = resolvePickupAddress;
 exports.buildPaymentGatewayFunctions = buildPaymentGatewayFunctions;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
@@ -81,6 +82,34 @@ function normalizeSaudiMobile(raw) {
     if (digits.startsWith("5") && digits.length === 9)
         return `0${digits}`;
     return digits;
+}
+/**
+ * عنوان يُرسل إلى البوابة في طلبات "استلام من الفرع".
+ *
+ * المشكلة: الاستلام من الفرع يُفرغ حقول العنوان (لا يُسأل عنها العميل
+ * أصلاً)، وكل البوابات تطلب مدينة وعنواناً غير فارغين وترفض الطلب بدونها.
+ * فيكون العميل قادراً على اختيار تابي أو تمارا ثم يفشل الدفع بلا سبب ظاهر.
+ *
+ * الحل: نرسل عنوان *المتجر* — وهو العنوان الصحيح فعلاً، لأن البضاعة تُسلَّم
+ * هناك. storeAddress نصّ حر، فنقرأه بالعرف الشائع "المدينة، الحي، الشارع".
+ */
+function resolvePickupAddress(storeAddress, storeName) {
+    const parts = (storeAddress || "")
+        .split(/[،,]/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+    const fallback = storeName || "استلام من الفرع";
+    if (parts.length === 0) {
+        return { city: fallback, district: "", street: fallback };
+    }
+    if (parts.length === 1) {
+        return { city: parts[0], district: "", street: parts[0] };
+    }
+    return {
+        city: parts[0],
+        district: parts[1] || "",
+        street: parts.slice(1).join("، ") || parts[0],
+    };
 }
 /**
  * يبني مجموعة الدوال. تُمرَّر المساعدات من index.ts بدل تصديرها، حتى لا
@@ -210,7 +239,7 @@ function buildPaymentGatewayFunctions(deps) {
     });
     // ==================== إنشاء عملية دفع ====================
     const paymentGatewayCreateCheckout = functions.https.onCall(async (data, context) => {
-        var _a;
+        var _a, _b;
         const storeId = await requireStoreId(data);
         if (!context.auth) {
             throw new functions.https.HttpsError("unauthenticated", "يجب تسجيل الدخول لإتمام الدفع");
@@ -232,13 +261,25 @@ function buildPaymentGatewayFunctions(deps) {
         const fulfillment = (data === null || data === void 0 ? void 0 : data.fulfillment) === "pickup" ? "pickup" : "delivery";
         const address = ((data === null || data === void 0 ? void 0 : data.address) || {});
         const customerName = asString(data === null || data === void 0 ? void 0 : data.customer) || "عميل";
+        // الاستلام من الفرع يُفرغ عنوان العميل، والبوابات ترفض عنواناً فارغاً.
+        // نرسل عنوان المتجر لأنه موضع التسليم الحقيقي.
+        const storeSettingsSnap = await (0, storePaths_1.settingsRef)(storeId, "store").get();
+        const storeBlock = (((_a = storeSettingsSnap.data()) === null || _a === void 0 ? void 0 : _a.store) || {});
+        const pickupAddress = resolvePickupAddress(asString(storeBlock.storeAddress), asString(storeBlock.storeName));
+        const gatewayAddress = fulfillment === "pickup"
+            ? pickupAddress
+            : {
+                city: asString(address.city),
+                district: asString(address.district),
+                street: asString(address.street),
+            };
         // معرّف قصير: يصبح معرّف مستند الطلب وأيضاً orderId عند المزوّد،
         // وبعض المزوّدين يحدّون طوله ومحارفه.
         const orderRef = `${adapter.id}-${(0, crypto_1.randomUUID)().replace(/-/g, "").slice(0, 10)}`;
         const draft = {
             userId: uid,
             customer: customerName,
-            email: asString(data === null || data === void 0 ? void 0 : data.email) || ((_a = context.auth.token) === null || _a === void 0 ? void 0 : _a.email) || "",
+            email: asString(data === null || data === void 0 ? void 0 : data.email) || ((_b = context.auth.token) === null || _b === void 0 ? void 0 : _b.email) || "",
             phone: mobile,
             items: pricing.items.map((item) => ({
                 productId: item.productId,
@@ -278,7 +319,9 @@ function buildPaymentGatewayFunctions(deps) {
             throw error;
         }
         const ctx = await (0, gatewayStore_1.buildGatewayContext)(storeId, environment);
-        const returnBase = `${ctx.baseUrl}/payment/return/${adapter.id}?ref=${encodeURIComponent(orderRef)}`;
+        // هنا فقط نُلزم بوجود رابط المتجر: اختبار الاتصال لا يحتاجه.
+        const storefrontUrl = (0, gatewayStore_1.requireStorefrontBaseUrl)(ctx);
+        const returnBase = `${storefrontUrl}/payment/return/${adapter.id}?ref=${encodeURIComponent(orderRef)}`;
         // يُكتب قبل النداء: إن نجح إنشاء الدفع عند المزوّد ثم انقطع الاتصال
         // قبل وصول الردّ، يبقى للمسح الدوري سجلّ يصالحه.
         await (0, storePaths_1.pendingPaymentRef)(orderRef).set({
@@ -317,10 +360,10 @@ function buildPaymentGatewayFunctions(deps) {
                     mobile,
                 },
                 address: {
-                    city: draft.address.city,
-                    district: draft.address.district,
-                    street: draft.address.street,
-                    building: draft.address.building,
+                    city: gatewayAddress.city,
+                    district: gatewayAddress.district,
+                    street: gatewayAddress.street,
+                    building: fulfillment === "pickup" ? "" : draft.address.building,
                 },
                 returnUrl: returnBase,
                 cancelUrl: `${returnBase}&outcome=cancel`,

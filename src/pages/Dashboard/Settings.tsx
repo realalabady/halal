@@ -7,7 +7,6 @@ import {
   Shield,
   Save,
   Loader,
-  Clock,
   Mail,
 } from "lucide-react";
 import { useStore } from "../../store/useStore";
@@ -17,10 +16,13 @@ import {
   getEmailSettings,
   updateEmailSettings,
 } from "../../services/firestore";
-import { saveTamaraSettings, testTamaraConnection } from "../../services/tamara";
-import { saveTabbySettings, testTabbyConnection } from "../../services/tabby";
 import GatewaySettingsCard from "../../components/GatewaySettingsCard/GatewaySettingsCard";
-import { PAYMENT_GATEWAYS } from "../../constants/paymentGateways";
+import {
+  MANUAL_METHOD_IDS,
+  PAYMENT_GATEWAYS,
+  paymentMethodDescription,
+  paymentMethodLabel,
+} from "../../constants/paymentGateways";
 import {
   updatePassword,
   EmailAuthProvider,
@@ -44,6 +46,7 @@ const Settings: React.FC = () => {
     language: "ar",
     bankName: "",
     bankIban: "",
+    storeUrl: "",
   });
 
   const [shippingSettings, setShippingSettings] = useState({
@@ -61,26 +64,23 @@ const Settings: React.FC = () => {
     lowStockThreshold: 5,
   });
 
-  const [paymentMethods, setPaymentMethods] = useState([
-    { id: "cash", name: "الدفع عند الاستلام", enabled: true },
-    { id: "bank", name: "التحويل البنكي", enabled: true },
-    { id: "card", name: "بطاقة ائتمان (PayPal)", enabled: true },
-    { id: "tamara", name: "تمارا - قسّمها على 3", enabled: true },
-    { id: "tabby", name: "تابي - قسّمها على 4", enabled: true },
-  ]);
+  // هذا الجدول يتحكّم بالطرق اليدوية فقط، وهي الطرق الوحيدة التي تقرأ منه
+  // واجهة العميل. كان يعرض أيضاً card/tamara/tabby رغم أن الـ checkout
+  // يتجاهلها عمداً، فكان الأدمن يُبدّل مفاتيح بلا أثر بينما تبقى الطرق
+  // العاملة مُطفأة. البوابات (MIS Pay / Madfu / neoleap) لها بطاقاتها أسفل،
+  // ولا تظهر للعميل إلا بعد نجاح اختبار اتصال حقيقي.
+  const [paymentMethods, setPaymentMethods] = useState<
+    { id: string; name: string; enabled: boolean }[]
+  >(() =>
+    MANUAL_METHOD_IDS.map((id) => ({
+      id,
+      name: paymentMethodLabel(id),
+      enabled: true,
+    })),
+  );
 
-  const [tamaraSettings, setTamaraSettings] = useState({
-    apiToken: "",
-    isConnected: false,
-  });
-  const [tamaraLoading, setTamaraLoading] = useState(false);
-
-  const [tabbySettings, setTabbySettings] = useState({
-    publicKey: "",
-    secretKey: "",
-    isConnected: false,
-  });
-  const [tabbyLoading, setTabbyLoading] = useState(false);
+  // حالة تمارا/تابي اليدوية حُذفت مع كتلتيهما: بطاقة السجل
+  // (GatewaySettingsCard) تدير الحقول وحالة الاتصال المحفوظة على الخادم.
 
   const [emailSettings, setEmailSettings] = useState({
     smtpHost: "",
@@ -114,8 +114,17 @@ const Settings: React.FC = () => {
           if (settings.shipping) setShippingSettings(settings.shipping);
           if (settings.notifications)
             setNotificationSettings(settings.notifications);
-          if (settings.payment?.methods)
-            setPaymentMethods(settings.payment.methods);
+          // تطبيع المحفوظ على الطرق اليدوية الثلاث: المستندات القديمة تحمل
+          // card/tamara/tabby (مفاتيح ميّتة) ولا تحمل emkan أصلاً.
+          if (settings.payment?.methods) {
+            const saved = settings.payment.methods;
+            setPaymentMethods((prev) =>
+              prev.map((m) => {
+                const match = saved.find((x) => x.id === m.id);
+                return match ? { ...m, enabled: match.enabled !== false } : m;
+              }),
+            );
+          }
         }
         // Email SMTP settings live in a separate admin-only doc.
         const email = await getEmailSettings();
@@ -152,84 +161,6 @@ const Settings: React.FC = () => {
         method.id === id ? { ...method, enabled: !method.enabled } : method,
       ),
     );
-  };
-
-  // اختبار وحفظ إعدادات تمارا
-  const handleTestTamara = async () => {
-    if (!tamaraSettings.apiToken) {
-      alert("يرجى إدخال مفتاح API");
-      return;
-    }
-    setTamaraLoading(true);
-    try {
-      const result = await testTamaraConnection(tamaraSettings.apiToken);
-      if (result.success) {
-        setTamaraSettings((prev) => ({ ...prev, isConnected: true }));
-        alert("تم الاتصال بتمارا بنجاح!");
-      }
-    } catch (error: any) {
-      console.error("Tamara test error:", error);
-      alert(`فشل الاتصال: ${error.message || "خطأ غير معروف"}`);
-      setTamaraSettings((prev) => ({ ...prev, isConnected: false }));
-    } finally {
-      setTamaraLoading(false);
-    }
-  };
-
-  const handleSaveTamara = async () => {
-    if (!tamaraSettings.apiToken) {
-      alert("يرجى إدخال مفتاح API");
-      return;
-    }
-    setTamaraLoading(true);
-    try {
-      await saveTamaraSettings(tamaraSettings.apiToken);
-      alert("تم حفظ إعدادات تمارا بنجاح");
-    } catch (error: any) {
-      console.error("Tamara save error:", error);
-      alert(`فشل الحفظ: ${error.message || "خطأ غير معروف"}`);
-    } finally {
-      setTamaraLoading(false);
-    }
-  };
-
-  // اختبار وحفظ إعدادات تابي
-  const handleTestTabby = async () => {
-    if (!tabbySettings.publicKey || !tabbySettings.secretKey) {
-      alert("يرجى إدخال مفاتيح API");
-      return;
-    }
-    setTabbyLoading(true);
-    try {
-      const result = await testTabbyConnection(tabbySettings.publicKey, tabbySettings.secretKey);
-      if (result.success) {
-        setTabbySettings((prev) => ({ ...prev, isConnected: true }));
-        alert("تم الاتصال بتابي بنجاح!");
-      }
-    } catch (error: any) {
-      console.error("Tabby test error:", error);
-      alert(`فشل الاتصال: ${error.message || "خطأ غير معروف"}`);
-      setTabbySettings((prev) => ({ ...prev, isConnected: false }));
-    } finally {
-      setTabbyLoading(false);
-    }
-  };
-
-  const handleSaveTabby = async () => {
-    if (!tabbySettings.publicKey || !tabbySettings.secretKey) {
-      alert("يرجى إدخال مفاتيح API");
-      return;
-    }
-    setTabbyLoading(true);
-    try {
-      await saveTabbySettings(tabbySettings.publicKey, tabbySettings.secretKey);
-      alert("تم حفظ إعدادات تابي بنجاح");
-    } catch (error: any) {
-      console.error("Tabby save error:", error);
-      alert(`فشل الحفظ: ${error.message || "خطأ غير معروف"}`);
-    } finally {
-      setTabbyLoading(false);
-    }
   };
 
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -379,6 +310,32 @@ const Settings: React.FC = () => {
                         })
                       }
                     />
+                    <p className="field-hint">
+                      يُستخدم أيضاً كعنوان التسليم المُرسل لبوابات الدفع في
+                      طلبات الاستلام من الفرع. الأفضل كتابته هكذا:
+                      المدينة، الحي، الشارع.
+                    </p>
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>رابط المتجر</label>
+                    <input
+                      type="url"
+                      dir="ltr"
+                      placeholder="https://example.com"
+                      value={storeSettings.storeUrl}
+                      onChange={(e) =>
+                        setStoreSettings({
+                          ...storeSettings,
+                          storeUrl: e.target.value.trim(),
+                        })
+                      }
+                    />
+                    <p className="field-hint">
+                      مطلوب لبوابات الدفع: إليه يعود العميل بعد الدفع. بدونه
+                      لا يمكن بدء أي عملية دفع عبر بوابة.
+                    </p>
                   </div>
                 </div>
                 <div className="form-row">
@@ -627,11 +584,13 @@ const Settings: React.FC = () => {
                       <div className="method-info">
                         <span className="method-name">{method.name}</span>
                         <span className="method-desc">
-                          {method.id === "cash" &&
-                            "يدفع العميل عند استلام الطلب"}
-                          {method.id === "bank" && "تحويل مباشر للحساب البنكي"}
-                          {method.id === "card" && "Visa, Mastercard, Mada"}
-                          {method.id === "tamara" && "اشترِ الآن وادفع لاحقاً"}
+                          {paymentMethodDescription(method.id)}
+                          {/* التحويل البنكي يُخفى من الـ checkout بلا آيبان:
+                              العميل بلا حساب يحوّل إليه. */}
+                          {method.id === "bank" &&
+                            method.enabled &&
+                            !storeSettings.bankIban &&
+                            " — لن تظهر للعملاء حتى تضيف رقم الآيبان في تبويب المتجر"}
                         </span>
                       </div>
                       <label className="toggle">
@@ -639,7 +598,6 @@ const Settings: React.FC = () => {
                           type="checkbox"
                           checked={method.enabled}
                           onChange={() => togglePaymentMethod(method.id)}
-                          disabled={method.id === "card"}
                         />
                         <span className="toggle-slider"></span>
                       </label>
@@ -647,124 +605,13 @@ const Settings: React.FC = () => {
                   ))}
                 </div>
 
-                {/* Tamara Settings */}
-                <div className="tamara-settings">
-                  <h3>
-                    <Clock size={18} />
-                    إعدادات تمارا
-                  </h3>
-                  <div className="form-group">
-                    <label>مفتاح API</label>
-                    <input
-                      type="password"
-                      value={tamaraSettings.apiToken}
-                      onChange={(e) =>
-                        setTamaraSettings((prev) => ({
-                          ...prev,
-                          apiToken: e.target.value,
-                          isConnected: false,
-                        }))
-                      }
-                      placeholder="أدخل مفتاح API من تمارا"
-                    />
-                  </div>
-                  <div className="tamara-actions">
-                    <button
-                      className="btn btn-outline"
-                      onClick={handleTestTamara}
-                      disabled={tamaraLoading}
-                    >
-                      {tamaraLoading ? (
-                        <Loader className="spinner" size={16} />
-                      ) : (
-                        "اختبار الاتصال"
-                      )}
-                    </button>
-                    <button
-                      className="btn btn-primary"
-                      onClick={handleSaveTamara}
-                      disabled={tamaraLoading}
-                    >
-                      {tamaraLoading ? (
-                        <Loader className="spinner" size={16} />
-                      ) : (
-                        "حفظ الإعدادات"
-                      )}
-                    </button>
-                  </div>
-                  {tamaraSettings.isConnected && (
-                    <p className="success-text">✓ متصل بتمارا</p>
-                  )}
-                </div>
+                {/* كتلتا تمارا وتابي اليدويتان حُذفتا: البوابتان الآن في
+                    السجل أدناه ببطاقتيهما، عبر نفس المسار المتحقَّق منه
+                    (اختبار اتصال حقيقي ثم مصالحة خادم-إلى-خادم). الدوال
+                    القديمة tamaraSaveSettings/tabbySaveSettings ما زالت
+                    منشورة لكن لا شيء يناديها، والمفاتيح المحفوظة سابقاً
+                    تُقرأ كما هي بفضل التوافق الخلفي في loadGatewayCredentials. */}
 
-                {/* Tabby Settings */}
-                <div className="tabby-settings">
-                  <h3>
-                    <Clock size={18} />
-                    إعدادات تابي
-                  </h3>
-                  <div className="form-group">
-                    <label>المفتاح العام (Public Key)</label>
-                    <input
-                      type="text"
-                      value={tabbySettings.publicKey}
-                      onChange={(e) =>
-                        setTabbySettings((prev) => ({
-                          ...prev,
-                          publicKey: e.target.value,
-                          isConnected: false,
-                        }))
-                      }
-                      placeholder="pk_xxxxx..."
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>المفتاح السري (Secret Key)</label>
-                    <input
-                      type="password"
-                      value={tabbySettings.secretKey}
-                      onChange={(e) =>
-                        setTabbySettings((prev) => ({
-                          ...prev,
-                          secretKey: e.target.value,
-                          isConnected: false,
-                        }))
-                      }
-                      placeholder="sk_xxxxx..."
-                    />
-                  </div>
-                  <div className="tabby-actions">
-                    <button
-                      className="btn btn-outline"
-                      onClick={handleTestTabby}
-                      disabled={tabbyLoading}
-                    >
-                      {tabbyLoading ? (
-                        <Loader className="spinner" size={16} />
-                      ) : (
-                        "اختبار الاتصال"
-                      )}
-                    </button>
-                    <button
-                      className="btn btn-primary"
-                      onClick={handleSaveTabby}
-                      disabled={tabbyLoading}
-                    >
-                      {tabbyLoading ? (
-                        <Loader className="spinner" size={16} />
-                      ) : (
-                        "حفظ الإعدادات"
-                      )}
-                    </button>
-                  </div>
-                  {tabbySettings.isConnected && (
-                    <p className="success-text">✓ متصل بتابي</p>
-                  )}
-                </div>
-
-                {/* بوابات الدفع السعودية: بطاقة واحدة لكل بوابة، مدفوعة
-                    بالسجل. لا تظهر أي بوابة للعميل إلا بعد نجاح اختبار
-                    اتصال حقيقي يسجّله الخادم. */}
                 {PAYMENT_GATEWAYS.map((gateway) => (
                   <GatewaySettingsCard key={gateway.id} gateway={gateway} />
                 ))}

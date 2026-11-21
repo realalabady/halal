@@ -409,6 +409,8 @@ export interface StoreSettings {
     language: string;
     bankName?: string;
     bankIban?: string;
+    /** الرابط العام للمتجر. تبني منه الدوال روابط العودة من بوابات الدفع. */
+    storeUrl?: string;
   };
   shipping?: {
     freeShippingThreshold: number;

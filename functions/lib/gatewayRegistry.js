@@ -47,16 +47,25 @@ const functions = __importStar(require("firebase-functions"));
 const mispayClient_1 = require("./mispayClient");
 const madfuClient_1 = require("./madfuClient");
 const neoleapClient_1 = require("./neoleapClient");
+const tabbyAdapter_1 = require("./tabbyAdapter");
+const tamaraAdapter_1 = require("./tamaraAdapter");
 exports.GATEWAY_ADAPTERS = {
     [mispayClient_1.misPayAdapter.id]: mispayClient_1.misPayAdapter,
     [madfuClient_1.madfuAdapter.id]: madfuClient_1.madfuAdapter,
     [neoleapClient_1.neoleapAdapter.id]: neoleapClient_1.neoleapAdapter,
+    // تمارا وتابي انتقلتا إلى السجل ليظهرا للعميل عبر نفس المسار المتحقَّق
+    // منه (اتصال مُختبَر + مصالحة خادم-إلى-خادم). ملفّاهما القديمان
+    // tamaraClient.ts / tabbyClient.ts باقيان للدوال القديمة دون تغيير.
+    [tamaraAdapter_1.tamaraAdapter.id]: tamaraAdapter_1.tamaraAdapter,
+    [tabbyAdapter_1.tabbyAdapter.id]: tabbyAdapter_1.tabbyAdapter,
 };
 /** الحقول السرّية لكل بوابة: لا تُرجَع للوحة التحكم إلا مُقنّعة. */
 exports.GATEWAY_SECRET_FIELDS = {
     mispay: ["appSecret"],
     madfu: ["basicToken", "password"],
     neoleap: ["tranportalPassword", "resourceKey", "iv"],
+    tamara: ["apiToken"],
+    tabby: ["secretKey"],
 };
 /** يُرجع المحوّل أو يرفع خطأ نداء واضحاً. */
 function requireAdapter(gatewayId) {

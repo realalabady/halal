@@ -19,7 +19,12 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 /** البوابات المدعومة. المعرّف هو اسم مستند الإعدادات الخاص بها أيضاً. */
-export type GatewayId = "mispay" | "madfu" | "neoleap";
+export type GatewayId =
+  | "mispay"
+  | "madfu"
+  | "neoleap"
+  | "tamara"
+  | "tabby";
 
 export type GatewayEnvironment = "sandbox" | "production";
 
@@ -228,6 +233,62 @@ export const PAYMENT_GATEWAYS: readonly GatewayDescriptor[] = [
       ENVIRONMENT_FIELD,
     ],
   },
+  {
+    id: "tamara",
+    name: "تمارا",
+    description: "قسّمها على ٣ دفعات بدون فوائد",
+    logo: "/payments/tamara.svg",
+    logoAlt: "تمارا Tamara",
+    fallbackIcon: CalendarClock,
+    flow: "redirect",
+    credentialFields: [
+      {
+        key: "apiToken",
+        label: "مفتاح API",
+        kind: "password",
+        required: true,
+        secret: true,
+        help: "من لوحة تاجر تمارا. المفتاح نفسه يحدّد البيئة (تجربة أو إنتاج).",
+      },
+      ENVIRONMENT_FIELD,
+    ],
+  },
+  {
+    id: "tabby",
+    name: "تابي",
+    description: "قسّمها على ٤ دفعات بدون فوائد",
+    logo: "/payments/tabby.svg",
+    logoAlt: "تابي Tabby",
+    fallbackIcon: CalendarClock,
+    flow: "redirect",
+    credentialFields: [
+      {
+        key: "publicKey",
+        label: "المفتاح العام (Public Key)",
+        kind: "password",
+        required: true,
+        secret: false,
+        help: "يُستخدم لإنشاء جلسة الدفع.",
+      },
+      {
+        key: "secretKey",
+        label: "المفتاح السرّي (Secret Key)",
+        kind: "password",
+        required: true,
+        secret: true,
+        help: "يُستخدم للاستعلام والتحصيل. لا تشاركه.",
+      },
+      {
+        key: "merchantCode",
+        label: "رمز التاجر (اختياري)",
+        kind: "text",
+        required: false,
+        secret: false,
+        help: "املأه فقط إذا أعطاك تابي رمزاً خاصاً بالمتجر.",
+      },
+      ENVIRONMENT_FIELD,
+    ],
+  },
 ];
 
 export const GATEWAY_BY_ID: Readonly<Partial<Record<string, GatewayDescriptor>>> =
@@ -248,9 +309,12 @@ export const MANUAL_METHOD_IDS = ["cash", "bank", "emkan"] as const;
 /**
  * طرق مُخفاة عن واجهة العميل بقرار صريح. لا تحذف هذه القائمة:
  * بدونها يُقرأ الفلتر في الـ checkout كأنه سهو.
- * لـ Tabby/Tamara/PayPal كود خادم يعمل، لكنها غير معروضة للعميل.
+ *
+ * بقي فيها "card" (PayPal) وحده: لا محوّل له في السجل، ومفتاحه في لوحة
+ * التحكم كان معطّلاً أصلاً. تمارا وتابي خرجتا منها وأصبحتا بوابتين كاملتين
+ * في السجل، فتظهران للعميل بعد نجاح اختبار الاتصال مثل البقية.
  */
-export const HIDDEN_METHOD_IDS = ["card", "tamara", "tabby"] as const;
+export const HIDDEN_METHOD_IDS = ["card"] as const;
 
 /** أوصاف الطرق اليدوية في صف طريقة الدفع (كانت ثلاثية شرطية داخل Checkout). */
 const MANUAL_METHOD_DESCRIPTIONS: Record<string, string> = {
@@ -271,10 +335,8 @@ const MANUAL_METHOD_LABELS: Record<string, string> = {
   cash: "الدفع عند الاستلام",
   bank: "تحويل بنكي",
   emkan: "إمكان - تقسيط",
-  // طرق مُخفاة، تظهر فقط في لوحة التحكم على طلبات قديمة
+  // طريقة مُخفاة، تظهر فقط في لوحة التحكم على طلبات قديمة
   card: "بطاقة ائتمان",
-  tamara: "تمارا",
-  tabby: "تابي",
 };
 
 /**

@@ -191,7 +191,12 @@ const Checkout: React.FC = () => {
   const paymentMethods = useMemo<PaymentMethod[]>(() => {
     const manual = manualMethods.filter(
       (m) =>
-        (ALLOWED_METHOD_IDS as readonly string[]).includes(m.id) && m.enabled,
+        (ALLOWED_METHOD_IDS as readonly string[]).includes(m.id) &&
+        m.enabled &&
+        // التحويل البنكي بلا آيبان يترك العميل بلا حساب يحوّل إليه.
+        // الشرط هنا لا في الـ JSX: لو بقي في الرسم فقط لاختار الأثر أدناه
+        // "bank" كطريقة افتراضية ثم أخفاها الرسم، فلا يظهر شيء مُحدَّداً.
+        (m.id !== "bank" || !!storeInfo.bankIban),
     );
 
     const gateways = PAYMENT_GATEWAYS.filter(
@@ -212,7 +217,7 @@ const Checkout: React.FC = () => {
       }));
 
     return [...manual, ...gateways];
-  }, [manualMethods, gatewayStatus, total]);
+  }, [manualMethods, gatewayStatus, total, storeInfo.bankIban]);
 
   // إن اختفت الطريقة المختارة (نزل الإجمالي تحت الحد، أو عُطّلت البوابة)
   // نرجع إلى أول طريقة متاحة بدل إرسال طريقة لم تعد معروضة.
@@ -684,13 +689,18 @@ const Checkout: React.FC = () => {
                         </button>
                       </div>
 
+                      {paymentMethods.length === 0 && (
+                        <div className="payment-empty">
+                          <AlertCircle size={18} aria-hidden="true" />
+                          <span>
+                            لا توجد طريقة دفع مفعّلة حالياً. تواصل مع المتجر
+                            لإتمام طلبك.
+                          </span>
+                        </div>
+                      )}
+
                       <div className="payment-options">
-                        {paymentMethods
-                          .filter((m) => m.enabled)
-                          // التحويل البنكي بلا آيبان مضبوط في الإعدادات يترك
-                          // العميل بلا حساب يحوّل إليه، فنخفي الخيار أصلاً.
-                          .filter((m) => m.id !== "bank" || !!storeInfo.bankIban)
-                          .map((method) => (
+                        {paymentMethods.map((method) => (
                             <label key={method.id} className="payment-option">
                               <input
                                 type="radio"

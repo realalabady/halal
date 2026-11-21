@@ -40,6 +40,38 @@ export const isGatewayConfigError = (e: unknown): e is GatewayConfigError =>
 const normalizeEnvironment = (value: unknown): GatewayEnvironment =>
   value === "production" ? "production" : "sandbox";
 
+/**
+ * البيئة المحفوظة، مع قاعدة توافق خلفي واحدة.
+ *
+ * المستندات التي كتبتها tamaraSaveSettings/tabbySaveSettings القديمة لا تحمل
+ * حقل environment أصلاً، وكان العميل القديم يستخدم مضيف *الإنتاج* دائماً
+ * (tamaraClient.ts: `const TAMARA_API_URL = TAMARA_PRODUCTION_URL`). لو
+ * افترضنا "تجربة" لتلك المستندات لذهب مفتاح إنتاج إلى مضيف التجربة وفشل
+ * الاختبار برسالة "المفتاح غير صحيح" وهي مُضلِّلة تماماً.
+ *
+ * العلامة على المستند القديم ليست غياب الحقول وحده — وإلا عُدّت كل بوابة
+ * *غير مُعدّة* إنتاجاً، وهو عكس الصواب تماماً. الشرط أن يحمل المستند فعلاً
+ * بيانات اعتماد في جذره بالشكل القديم. أي مستند فارغ أو جديد ⇒ تجربة.
+ */
+function resolveEnvironment(
+  data: Record<string, unknown>,
+  credentialFields: readonly string[],
+): GatewayEnvironment {
+  if (data.environment !== undefined) {
+    return normalizeEnvironment(data.environment);
+  }
+  const hasNewShape =
+    typeof data.credentials === "object" && data.credentials !== null;
+  if (hasNewShape) return "sandbox";
+
+  const hasLegacyCredentials = credentialFields.some((field) => {
+    const value = data[field];
+    return typeof value === "string" && value.trim().length > 0;
+  });
+
+  return hasLegacyCredentials ? "production" : "sandbox";
+}
+
 /** يقنّع سرّاً لعرضه للأدمن: آخر أربع خانات فقط. */
 export function maskSecret(value: string | undefined): string {
   if (!value) return "";
@@ -71,11 +103,24 @@ export async function loadGatewayCredentials(
   const missing: string[] = [];
 
   for (const field of adapter.requiredCredentials) {
-    const fromDoc = stored[field];
-    const value =
-      typeof fromDoc === "string" && fromDoc.trim()
-        ? fromDoc.trim()
-        : (process.env[envVarName(adapter.id, field)] || "").trim();
+    // ثلاث طبقات بالترتيب:
+    //  1) credentials.{field} — الشكل الذي يكتبه السجل الجديد.
+    //  2) {field} في جذر المستند — شكل tamaraSaveSettings/tabbySaveSettings
+    //     القديم (apiToken / publicKey / secretKey مباشرة في الجذر). بدون
+    //     هذه الطبقة تفقد المتاجر التي أعدّت تمارا أو تابي مفاتيحها عند
+    //     انتقالهما إلى السجل.
+    //  3) متغيّر بيئة على مستوى المشروع.
+    const candidates = [stored[field], data[field]];
+    let value = "";
+    for (const candidate of candidates) {
+      if (typeof candidate === "string" && candidate.trim()) {
+        value = candidate.trim();
+        break;
+      }
+    }
+    if (!value) {
+      value = (process.env[envVarName(adapter.id, field)] || "").trim();
+    }
     if (!value) {
       missing.push(field);
       continue;
@@ -89,7 +134,10 @@ export async function loadGatewayCredentials(
     );
   }
 
-  return { creds, environment: normalizeEnvironment(data.environment) };
+  return {
+    creds,
+    environment: resolveEnvironment(data, adapter.requiredCredentials),
+  };
 }
 
 /** يكتب بيانات الاعتماد ويُرجع الحالة إلى "لم تُختبر". */
@@ -254,9 +302,14 @@ export async function readGatewayAdminView(
 
   const fields: Record<string, string> = {};
   for (const field of adapter.requiredCredentials) {
-    const value =
-      typeof stored[field] === "string" ? (stored[field] as string) : "";
-    fields[field] = secretFields.includes(field) ? maskSecret(value) : value;
+    // نفس التوافق الخلفي: مفاتيح تمارا/تابي القديمة في جذر المستند
+    const raw =
+      typeof stored[field] === "string"
+        ? (stored[field] as string)
+        : typeof data[field] === "string"
+          ? (data[field] as string)
+          : "";
+    fields[field] = secretFields.includes(field) ? maskSecret(raw) : raw;
   }
 
   const asIso = (value: unknown): string | undefined =>
@@ -266,7 +319,7 @@ export async function readGatewayAdminView(
 
   return {
     fields,
-    environment: normalizeEnvironment(data.environment),
+    environment: resolveEnvironment(data, adapter.requiredCredentials),
     enabled: data.enabled !== false,
     connection: {
       status: (connection.status as ConnectionStatus) || "untested",
@@ -287,19 +340,34 @@ export async function buildGatewayContext(
   storeId: string,
   environment: GatewayEnvironment,
 ): Promise<GatewayContext> {
-  const snap = await storeRef(storeId).get();
-  const domain = snap.data()?.domain;
-  const raw =
-    typeof domain === "string" && domain.trim()
-      ? domain.trim()
-      : process.env.STOREFRONT_BASE_URL || "";
-  const baseUrl = raw.replace(/\/+$/, "");
+  // ثلاثة مصادر: جذر المتجر، ثم حقل "رابط المتجر" في الإعدادات (يملؤه
+  // الأدمن من اللوحة)، ثم متغيّر بيئة على مستوى المشروع.
+  const [rootSnap, settingsSnap] = await Promise.all([
+    storeRef(storeId).get(),
+    settingsRef(storeId, "store").get(),
+  ]);
 
-  if (!baseUrl) {
-    throw new GatewayConfigError(
-      `نطاق المتجر (domain) غير مضبوط في stores/${storeId}، وبدونه لا يمكن بناء روابط العودة من بوابة الدفع.`,
-    );
+  const storeBlock = (settingsSnap.data()?.store || {}) as Record<
+    string,
+    unknown
+  >;
+  const candidates = [
+    rootSnap.data()?.domain,
+    storeBlock.storeUrl,
+    process.env.STOREFRONT_BASE_URL,
+  ];
+
+  let baseUrl = "";
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      baseUrl = candidate.trim().replace(/\/+$/, "");
+      break;
+    }
   }
+
+  // لا نرمي هنا: اختبار الاتصال لا يحتاج رابط عودة إطلاقاً، وكان رميُ
+  // الخطأ في هذه النقطة يمنع الأدمن من اختبار مفاتيحه أصلاً. الخطأ يقع
+  // حيث تُستعمل القيمة فعلاً — عند إنشاء الدفع (requireStorefrontBaseUrl).
 
   const project =
     process.env.GCLOUD_PROJECT || process.env.FIREBASE_PROJECT_ID || "";
@@ -310,4 +378,18 @@ export async function buildGatewayContext(
   ).replace(/\/+$/, "");
 
   return { storeId, environment, baseUrl, functionsBaseUrl };
+}
+
+/**
+ * يتحقّق أن للمتجر رابطاً عاماً قبل إنشاء عملية دفع.
+ * يُنادى عند إنشاء الدفع فقط — لا عند اختبار الاتصال.
+ */
+export function requireStorefrontBaseUrl(ctx: GatewayContext): string {
+  if (!ctx.baseUrl) {
+    throw new GatewayConfigError(
+      "رابط المتجر غير مضبوط، وبدونه لا يمكن بناء روابط العودة من بوابة " +
+        "الدفع. أضفه في لوحة التحكم ← الإعدادات ← المتجر ← رابط المتجر.",
+    );
+  }
+  return ctx.baseUrl;
 }
