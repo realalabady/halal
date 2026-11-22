@@ -52,6 +52,12 @@ export interface PricingItemInput {
 export async function computeOrderPricing(
   storeId: string,
   items: PricingItemInput[] | undefined,
+  /**
+   * الاستلام من الفرع لا شحن فيه. بدون هذا الوسيط كان الخادم يُضيف تكلفة
+   * الشحن إلى طلب استلام، فلا يطابق إجمالي العميل ويُرفض كل دفع عبر بوابة
+   * في طلبات الاستلام من الفرع.
+   */
+  fulfillment: "delivery" | "pickup" = "delivery",
 ): Promise<OrderPricing> {
   if (!Array.isArray(items) || items.length === 0) {
     throw new functions.https.HttpsError(
@@ -110,7 +116,7 @@ export async function computeOrderPricing(
   try {
     const settingsDoc = await settingsRef(storeId, "store").get();
     const data = settingsDoc.data();
-    const shipping = data?.shipping;
+    const shipping = fulfillment === "pickup" ? null : data?.shipping;
     if (shipping) {
       const threshold = Number(shipping.freeShippingThreshold ?? 0);
       const defaultCost = Number(shipping.defaultShippingCost ?? 0);

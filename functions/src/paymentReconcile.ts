@@ -15,6 +15,11 @@
  */
 
 import * as admin from "firebase-admin";
+// FieldValue/Timestamp تُستورد مباشرة من firebase-admin/firestore بدل
+// admin.firestore.* : الشكل الثاني يعتمد على خصائص ساكنة على دالة،
+// وهي تختفي تحت غلاف محاكي الدوال فتفشل الكتابة محلياً. الاستيراد
+// المباشر هو الشكل الموصى به ويعمل في البيئتين بلا فرق.
+import { FieldValue } from "firebase-admin/firestore";
 
 import { pendingPaymentRef, storeDoc } from "./storePaths";
 import { requireAdapter } from "./gatewayRegistry";
@@ -148,7 +153,7 @@ export async function reconcileGatewayPayment(
         {
           status: terminal as PendingStatus,
           providerCode: status.providerCode || null,
-          resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+          resolvedAt: FieldValue.serverTimestamp(),
         },
         { merge: true },
       );
@@ -173,7 +178,7 @@ export async function reconcileGatewayPayment(
       {
         status: "FAILED" as PendingStatus,
         amountMismatch: { expected, received: status.amount },
-        resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+        resolvedAt: FieldValue.serverTimestamp(),
       },
       { merge: true },
     );
@@ -199,7 +204,7 @@ export async function reconcileGatewayPayment(
           {
             status: "RECONCILED" as PendingStatus,
             orderId: orderRef,
-            reconciledAt: admin.firestore.FieldValue.serverTimestamp(),
+            reconciledAt: FieldValue.serverTimestamp(),
           },
           { merge: true },
         );
@@ -224,14 +229,14 @@ export async function reconcileGatewayPayment(
         ...draft,
         status: "pending",
         paymentStatus: "paid",
-        paidAt: admin.firestore.FieldValue.serverTimestamp(),
+        paidAt: FieldValue.serverTimestamp(),
         gateway: gatewayId,
         gatewayRef: orderRef,
         gatewayProviderRef: pending.providerRef || null,
         gatewayStatusCode: status.providerCode || null,
         ...(stockShortfall ? { stockShortfall: true } : {}),
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       });
 
       tx.set(
@@ -240,7 +245,7 @@ export async function reconcileGatewayPayment(
           status: "RECONCILED" as PendingStatus,
           orderId: orderRef,
           providerCode: status.providerCode || null,
-          reconciledAt: admin.firestore.FieldValue.serverTimestamp(),
+          reconciledAt: FieldValue.serverTimestamp(),
           ...(stockShortfall ? { stockShortfall: true } : {}),
         },
         { merge: true },
@@ -269,7 +274,7 @@ export async function expirePendingPayment(orderRef: string): Promise<void> {
   await pendingPaymentRef(orderRef).set(
     {
       status: "EXPIRED" as PendingStatus,
-      resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+      resolvedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },
   );

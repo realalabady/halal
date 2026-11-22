@@ -393,6 +393,39 @@ function pureTests() {
     assertEqual(redacted.appId, "app-1", "المعرّف غير السرّي يبقى");
     assertEqual(redacted.nested.name, "منتج", "الاسم يبقى");
   });
+
+  // --- أخطاء الإعداد تصل العميل مقروءة ---
+  // الانحدار المحمي: رابط متجر ناقص كان يتسرّب خارج الدالة
+  // فيرى المشتري "FirebaseError: INTERNAL" بلا نصّ.
+  console.log("\nأخطاء الإعداد");
+  const ctxOf = (baseUrl) => ({
+    storeId: "s1",
+    environment: "sandbox",
+    baseUrl,
+    functionsBaseUrl: "https://fn.example.com",
+  });
+
+  check("رابط المتجر الموجود يُعاد كما هو", () => {
+    assertEqual(
+      api.resolveStorefrontUrlOrFail(ctxOf("https://shop.example.com")),
+      "https://shop.example.com",
+      "الرابط",
+    );
+  });
+
+  check("رابط المتجر الناقص يُصبح failed-precondition بنصّ عربي", () => {
+    let thrown;
+    try {
+      api.resolveStorefrontUrlOrFail(ctxOf(""));
+    } catch (error) {
+      thrown = error;
+    }
+    if (!thrown) throw new Error("كان يجب أن يرمي");
+    assertEqual(thrown.code, "failed-precondition", "رمز الخطأ");
+    if (!/رابط المتجر/.test(thrown.message)) {
+      throw new Error(`الرسالة لا تذكر رابط المتجر: ${thrown.message}`);
+    }
+  });
 }
 
 // ==================== ٢) اختبارات المصالحة على المحاكي ====================
@@ -770,6 +803,164 @@ async function emulatorTests() {
     const priv = await db.doc(`stores/${STORE}/settings/faketest`).get();
     assertEqual(priv.data().connection.status, "connected", "الحالة الخاصة");
     assertEqual(priv.data().connection.detail, "سرّ لا يُنشر", "التفصيل خاص");
+  });
+
+  await checkAsync(
+    "بوابة اتصلت ولم يُلمس مفتاحها تصل العميل (enabled في النسخة العامة)",
+    async () => {
+      // الانحدار الحقيقي: enabled كان يُكتب فقط عند تبديل المفتاح يدوياً،
+      // فتبقى بوابة متّصلة بلا الحقل ويُخفيها الـ checkout إلى الأبد.
+      await db.doc(`stores/${STORE}/settings/freshgw`).set({
+        credentials: { apiKey: "k" },
+      });
+      await store.recordConnectionResult({
+        storeId: STORE,
+        gatewayId: "freshgw",
+        environment: "sandbox",
+        result: { success: true, message: "تم" },
+      });
+
+      const pub = await db.doc(`stores/${STORE}/settings/store`).get();
+      const mirror = pub.data().paymentGateways.freshgw;
+      assertEqual(mirror.connected, true, "متّصلة");
+      assertEqual(mirror.enabled, true, "مُفعّلة ضمناً");
+
+      // وهذا بالضبط ما يفحصه الـ checkout
+      assert(
+        mirror.connected && mirror.enabled !== false,
+        "يجب أن تمرّ شرط العرض في الـ checkout",
+      );
+    },
+  );
+
+  await checkAsync("تعطيل صريح يبقى معطّلاً بعد اختبار ناجح", async () => {
+    await db
+      .doc(`stores/${STORE}/settings/offgw`)
+      .set({ credentials: { apiKey: "k" }, enabled: false });
+    await store.recordConnectionResult({
+      storeId: STORE,
+      gatewayId: "offgw",
+      environment: "sandbox",
+      result: { success: true, message: "تم" },
+    });
+
+    const pub = await db.doc(`stores/${STORE}/settings/store`).get();
+    const mirror = pub.data().paymentGateways.offgw;
+    assertEqual(mirror.connected, true, "متّصلة");
+    assertEqual(mirror.enabled, false, "لكن الأدمن عطّلها صراحةً");
+    assert(
+      !(mirror.connected && mirror.enabled !== false),
+      "يجب ألّا تظهر للعميل",
+    );
+  });
+
+  await checkAsync(
+    "حفظ بعد اختبار ناجح لا يُخفي البوابة (الانحدار الذي رآه المستخدم)",
+    async () => {
+      const ref = db.doc(`stores/${STORE}/settings/savegw`);
+      await ref.set({ credentials: { apiKey: "k" }, environment: "sandbox" });
+
+      // ١) اختبار ناجح
+      await store.recordConnectionResult({
+        storeId: STORE,
+        gatewayId: "savegw",
+        environment: "sandbox",
+        result: { success: true, message: "تم" },
+      });
+      let mirror = (
+        await db.doc(`stores/${STORE}/settings/store`).get()
+      ).data().paymentGateways.savegw;
+      assertEqual(mirror.connected, true, "متّصلة بعد الاختبار");
+
+      // ٢) الأدمن يضغط "حفظ الإعدادات" بنفس القيم — هذا ما كان يكسرها
+      await store.writeGatewayCredentials({
+        storeId: STORE,
+        gatewayId: "savegw",
+        credentials: { apiKey: "k" },
+        environment: "sandbox",
+        uid: "admin-1",
+      });
+
+      mirror = (
+        await db.doc(`stores/${STORE}/settings/store`).get()
+      ).data().paymentGateways.savegw;
+      assertEqual(mirror.connected, true, "تبقى متّصلة بعد حفظ بلا تغيير");
+
+      const priv = (await ref.get()).data();
+      assertEqual(
+        priv.connection.status,
+        "connected",
+        "والمستند الخاص يوافق النسخة العامة",
+      );
+    },
+  );
+
+  await checkAsync("تغيير مفتاح فعلي يُبطل الاتصال ويُخفي البوابة", async () => {
+    await store.writeGatewayCredentials({
+      storeId: STORE,
+      gatewayId: "savegw",
+      credentials: { apiKey: "DIFFERENT" },
+      environment: "sandbox",
+      uid: "admin-1",
+    });
+    const mirror = (
+      await db.doc(`stores/${STORE}/settings/store`).get()
+    ).data().paymentGateways.savegw;
+    assertEqual(mirror.connected, false, "مفتاح جديد = اتصال غير مُثبت");
+  });
+
+  await checkAsync("تغيير البيئة وحدها يُبطل الاتصال", async () => {
+    await db
+      .doc(`stores/${STORE}/settings/envgw`)
+      .set({ credentials: { apiKey: "k" }, environment: "sandbox" });
+    await store.recordConnectionResult({
+      storeId: STORE,
+      gatewayId: "envgw",
+      environment: "sandbox",
+      result: { success: true, message: "تم" },
+    });
+    await store.writeGatewayCredentials({
+      storeId: STORE,
+      gatewayId: "envgw",
+      credentials: { apiKey: "k" },
+      environment: "production",
+      uid: "admin-1",
+    });
+    const mirror = (
+      await db.doc(`stores/${STORE}/settings/store`).get()
+    ).data().paymentGateways.envgw;
+    assertEqual(mirror.connected, false, "بيئة جديدة = إعادة اختبار");
+    assertEqual(mirror.environment, "production", "البيئة تُحدّث");
+  });
+
+  await checkAsync("النسخة العامة تتبع المستند الخاص دائماً", async () => {
+    // أياً كان ترتيب النداءات، الاثنان لا يفترقان.
+    await db
+      .doc(`stores/${STORE}/settings/syncgw`)
+      .set({ credentials: { apiKey: "k" }, environment: "sandbox" });
+    await store.recordConnectionResult({
+      storeId: STORE,
+      gatewayId: "syncgw",
+      environment: "sandbox",
+      result: { success: true, message: "تم" },
+    });
+    await store.setGatewayEnabled(STORE, "syncgw", false);
+    await store.setGatewayEnabled(STORE, "syncgw", true);
+
+    const priv = (
+      await db.doc(`stores/${STORE}/settings/syncgw`).get()
+    ).data();
+    const mirror = (
+      await db.doc(`stores/${STORE}/settings/store`).get()
+    ).data().paymentGateways.syncgw;
+
+    assertEqual(
+      mirror.connected,
+      priv.connection.status === "connected",
+      "connected متطابق",
+    );
+    assertEqual(mirror.enabled, priv.enabled !== false, "enabled متطابق");
+    assert(mirror.connected && mirror.enabled, "وتظهر للعميل");
   });
 
   await checkAsync("فشل الاعتماد يُنزّل البوابة فوراً", async () => {

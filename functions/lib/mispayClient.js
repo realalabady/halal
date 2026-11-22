@@ -13,46 +13,17 @@
  * وسيطاً، والـ JWT يُخزَّن في Firestore داخل مستند المتجر نفسه — لا في الذاكرة —
  * فلا تحمل حاوية دافئة رمز متجر إلى متجر آخر.
  */
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MISPAY_WEBHOOK_IPS = exports.misPayAdapter = exports.MISPAY_CODES = exports.MISPAY_MIN_AMOUNT_SAR = void 0;
 exports.decryptMisPayBlob = decryptMisPayBlob;
 exports.decryptMisPayCallback = decryptMisPayCallback;
 exports.appIdMatches = appIdMatches;
 exports.clearMisPayTokenCache = clearMisPayTokenCache;
-const admin = __importStar(require("firebase-admin"));
+// FieldValue/Timestamp تُستورد مباشرة من firebase-admin/firestore بدل
+// admin.firestore.* : الشكل الثاني يعتمد على خصائص ساكنة على دالة،
+// وهي تختفي تحت غلاف محاكي الدوال فتفشل الكتابة محلياً. الاستيراد
+// المباشر هو الشكل الموصى به ويعمل في البيئتين بلا فرق.
+const firestore_1 = require("firebase-admin/firestore");
 const crypto_1 = require("crypto");
 const storePaths_1 = require("./storePaths");
 const gatewayHttp_1 = require("./gatewayHttp");
@@ -416,6 +387,6 @@ exports.MISPAY_WEBHOOK_IPS = {
 };
 /** يمسح الرمز المخزّن (يُستخدم عند تغيير المفاتيح). */
 async function clearMisPayTokenCache(storeId) {
-    await (0, storePaths_1.settingsRef)(storeId, "mispay").set({ tokenCache: admin.firestore.FieldValue.delete() }, { merge: true });
+    await (0, storePaths_1.settingsRef)(storeId, "mispay").set({ tokenCache: firestore_1.FieldValue.delete() }, { merge: true });
 }
 //# sourceMappingURL=mispayClient.js.map

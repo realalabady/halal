@@ -49,6 +49,7 @@ const madfuClient_1 = require("./madfuClient");
 const neoleapClient_1 = require("./neoleapClient");
 const tabbyAdapter_1 = require("./tabbyAdapter");
 const tamaraAdapter_1 = require("./tamaraAdapter");
+const mockGateway_1 = require("./mockGateway");
 exports.GATEWAY_ADAPTERS = {
     [mispayClient_1.misPayAdapter.id]: mispayClient_1.misPayAdapter,
     [madfuClient_1.madfuAdapter.id]: madfuClient_1.madfuAdapter,
@@ -59,6 +60,11 @@ exports.GATEWAY_ADAPTERS = {
     [tamaraAdapter_1.tamaraAdapter.id]: tamaraAdapter_1.tamaraAdapter,
     [tabbyAdapter_1.tabbyAdapter.id]: tabbyAdapter_1.tabbyAdapter,
 };
+// بوابة وهمية للاختبار المحلي الكامل. الحارس هو FUNCTIONS_EMULATOR، وهو
+// متغيّر لا وجود له في الدوال المنشورة، فلا تظهر هذه البوابة في الإنتاج.
+if ((0, mockGateway_1.isEmulator)()) {
+    exports.GATEWAY_ADAPTERS[mockGateway_1.mockAdapter.id] = mockGateway_1.mockAdapter;
+}
 /** الحقول السرّية لكل بوابة: لا تُرجَع للوحة التحكم إلا مُقنّعة. */
 exports.GATEWAY_SECRET_FIELDS = {
     mispay: ["appSecret"],

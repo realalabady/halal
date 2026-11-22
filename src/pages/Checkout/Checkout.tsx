@@ -203,7 +203,9 @@ const Checkout: React.FC = () => {
       (g) => !(HIDDEN_METHOD_IDS as readonly string[]).includes(g.id),
     )
       .map((g) => ({ gateway: g, status: gatewayStatus[g.id] }))
-      .filter(({ status }) => status?.enabled && status?.connected)
+      // enabled المفقود يعني "مُفعّلة": هذا هو نفس العرف في لوحة التحكم
+      // (data.enabled !== false)، وبدونه تختفي بوابة متّصلة لم يُلمس مفتاحها.
+      .filter(({ status }) => status?.connected && status?.enabled !== false)
       // الحد الأدنى تجاري لا تجميلي: سلة بـ ٩٠ ر.س تُظهر شعار MIS Pay ثم
       // تفشل عند المزوّد هي طلب مفقود.
       .filter(

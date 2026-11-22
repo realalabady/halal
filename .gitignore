@@ -37,3 +37,6 @@ serviceAccount*.json
 # Local caches
 .firebase/
 .vite/
+
+# ملف تشغيل المحاكي المحلي (يُنشأ عند الحاجة)
+.env.emulator.local

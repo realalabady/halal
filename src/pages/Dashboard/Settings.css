@@ -480,3 +480,70 @@
   line-height: 1.6;
   color: var(--ink-soft);
 }
+/* تنبيه رابط المتجر الناقص — يظهر في تبويب المدفوعات لأن أثر الحقل هناك. */
+.gateway-url-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 1rem 1.15rem;
+  margin-bottom: 1.25rem;
+  border: 1px solid #f59e0b;
+  border-radius: 12px;
+  background: #fffbeb;
+  color: #78350f;
+}
+
+.gateway-url-alert > svg {
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+  color: #d97706;
+}
+
+.gateway-url-alert-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.gateway-url-alert-body strong {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.95rem;
+}
+
+.gateway-url-alert-body p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.gateway-url-alert-note {
+  margin-top: 0.4rem !important;
+  font-weight: 600;
+}
+
+.gateway-url-alert .btn-primary {
+  flex-shrink: 0;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.55rem 0.9rem;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.gateway-url-alert .btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .gateway-url-alert {
+    flex-wrap: wrap;
+  }
+
+  .gateway-url-alert .btn-primary {
+    width: 100%;
+  }
+}

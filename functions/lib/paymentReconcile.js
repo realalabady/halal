@@ -51,6 +51,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.reconcileGatewayPayment = reconcileGatewayPayment;
 exports.expirePendingPayment = expirePendingPayment;
 const admin = __importStar(require("firebase-admin"));
+// FieldValue/Timestamp تُستورد مباشرة من firebase-admin/firestore بدل
+// admin.firestore.* : الشكل الثاني يعتمد على خصائص ساكنة على دالة،
+// وهي تختفي تحت غلاف محاكي الدوال فتفشل الكتابة محلياً. الاستيراد
+// المباشر هو الشكل الموصى به ويعمل في البيئتين بلا فرق.
+const firestore_1 = require("firebase-admin/firestore");
 const storePaths_1 = require("./storePaths");
 const gatewayRegistry_1 = require("./gatewayRegistry");
 const gatewayStore_1 = require("./gatewayStore");
@@ -122,7 +127,7 @@ async function reconcileGatewayPayment(storeId, orderRef) {
             await pendingRef.set({
                 status: terminal,
                 providerCode: status.providerCode || null,
-                resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+                resolvedAt: firestore_1.FieldValue.serverTimestamp(),
             }, { merge: true });
         }
         return {
@@ -140,7 +145,7 @@ async function reconcileGatewayPayment(storeId, orderRef) {
         await pendingRef.set({
             status: "FAILED",
             amountMismatch: { expected, received: status.amount },
-            resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+            resolvedAt: firestore_1.FieldValue.serverTimestamp(),
         }, { merge: true });
         console.error(`[reconcile] ${gatewayId}/${orderRef} عدم تطابق المبلغ: متوقّع ${expected} ووارد ${status.amount}`);
         return {
@@ -159,7 +164,7 @@ async function reconcileGatewayPayment(storeId, orderRef) {
                 tx.set(pendingRef, {
                     status: "RECONCILED",
                     orderId: orderRef,
-                    reconciledAt: admin.firestore.FieldValue.serverTimestamp(),
+                    reconciledAt: firestore_1.FieldValue.serverTimestamp(),
                 }, { merge: true });
                 return;
             }
@@ -178,20 +183,20 @@ async function reconcileGatewayPayment(storeId, orderRef) {
                 ...draft,
                 status: "pending",
                 paymentStatus: "paid",
-                paidAt: admin.firestore.FieldValue.serverTimestamp(),
+                paidAt: firestore_1.FieldValue.serverTimestamp(),
                 gateway: gatewayId,
                 gatewayRef: orderRef,
                 gatewayProviderRef: pending.providerRef || null,
                 gatewayStatusCode: status.providerCode || null,
                 ...(stockShortfall ? { stockShortfall: true } : {}),
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                createdAt: firestore_1.FieldValue.serverTimestamp(),
+                updatedAt: firestore_1.FieldValue.serverTimestamp(),
             });
             tx.set(pendingRef, {
                 status: "RECONCILED",
                 orderId: orderRef,
                 providerCode: status.providerCode || null,
-                reconciledAt: admin.firestore.FieldValue.serverTimestamp(),
+                reconciledAt: firestore_1.FieldValue.serverTimestamp(),
                 ...(stockShortfall ? { stockShortfall: true } : {}),
             }, { merge: true });
         });
@@ -216,7 +221,7 @@ async function reconcileGatewayPayment(storeId, orderRef) {
 async function expirePendingPayment(orderRef) {
     await (0, storePaths_1.pendingPaymentRef)(orderRef).set({
         status: "EXPIRED",
-        resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+        resolvedAt: firestore_1.FieldValue.serverTimestamp(),
     }, { merge: true });
 }
 //# sourceMappingURL=paymentReconcile.js.map

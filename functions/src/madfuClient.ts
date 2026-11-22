@@ -16,6 +16,11 @@
  */
 
 import * as admin from "firebase-admin";
+// FieldValue/Timestamp تُستورد مباشرة من firebase-admin/firestore بدل
+// admin.firestore.* : الشكل الثاني يعتمد على خصائص ساكنة على دالة،
+// وهي تختفي تحت غلاف محاكي الدوال فتفشل الكتابة محلياً. الاستيراد
+// المباشر هو الشكل الموصى به ويعمل في البيئتين بلا فرق.
+import { FieldValue } from "firebase-admin/firestore";
 import { createHash, randomUUID } from "crypto";
 
 import { settingsRef } from "./storePaths";
@@ -439,7 +444,7 @@ export const madfuAdapter: GatewayAdapter = {
 /** يمسح رمز الجلسة المخزّن (عند تغيير بيانات الاعتماد). */
 export async function clearMadfuTokenCache(storeId: string): Promise<void> {
   await settingsRef(storeId, "madfu").set(
-    { tokenCache: admin.firestore.FieldValue.delete() },
+    { tokenCache: FieldValue.delete() },
     { merge: true },
   );
 }

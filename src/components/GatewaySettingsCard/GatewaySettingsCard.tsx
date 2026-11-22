@@ -113,34 +113,36 @@ const GatewaySettingsCard: React.FC<Props> = ({ gateway }) => {
     setTouched((prev) => ({ ...prev, [key]: true }));
   };
 
-  const handleSave = async () => {
+  /**
+   * يحفظ ما في النموذج. يُرجع رسالة الخادم، ويرمي عند نقص حقل مطلوب.
+   * الأسرار التي لم يلمسها الأدمن تُرسل مُقنّعة، والخادم يفهمها
+   * على أنها "لم تتغيّر" ويُبقي المحفوظ.
+   */
+  const persist = useCallback(async () => {
     const missing = gateway.credentialFields
       .filter((f) => f.required && f.key !== "environment")
       .filter((f) => !(values[f.key] || "").trim())
       .map((f) => f.label);
 
     if (missing.length > 0) {
-      showToast(`أكمل الحقول المطلوبة: ${missing.join("، ")}`, "error");
-      return;
+      throw new Error(`أكمل الحقول المطلوبة: ${missing.join("، ")}`);
     }
 
+    const credentials: Record<string, string> = {};
+    for (const field of gateway.credentialFields) {
+      if (field.key === "environment") continue;
+      const value = (values[field.key] || "").trim();
+      if (!value) continue;
+      credentials[field.key] = value;
+    }
+
+    return saveGatewaySettings(gateway.id, credentials, environment);
+  }, [gateway.id, gateway.credentialFields, values, environment]);
+
+  const handleSave = async () => {
     setSaving(true);
     try {
-      const credentials: Record<string, string> = {};
-      for (const field of gateway.credentialFields) {
-        if (field.key === "environment") continue;
-        const value = (values[field.key] || "").trim();
-        if (!value) continue;
-        // سرّ لم يلمسه الأدمن يُرسل كما هو مُقنّعاً، والخادم يفهمه
-        // على أنه "لم يتغيّر" ويُبقي المحفوظ.
-        credentials[field.key] = value;
-      }
-
-      const result = await saveGatewaySettings(
-        gateway.id,
-        credentials,
-        environment,
-      );
+      const result = await persist();
       showToast(result.message || "تم حفظ الإعدادات", "success");
       await load();
     } catch (error) {
@@ -156,6 +158,11 @@ const GatewaySettingsCard: React.FC<Props> = ({ gateway }) => {
   const handleTest = async () => {
     setTesting(true);
     try {
+      // الحفظ أولاً: الاختبار يجري على الإعدادات *المحفوظة*، فلو بدّل
+      // الأدمن البيئة إلى "تجربة" ثم ضغط اختبار، كان الخادم يختبر الإنتاج
+      // المحفوظ ثم تُعيد القراءة القيمة القديمة إلى القائمة — فيبدو كأن
+      // الاختيار "يرتدّ" من تلقاء نفسه.
+      await persist();
       const result = await testGatewayConnection(gateway.id);
       showToast(result.message, result.success ? "success" : "error");
       await load();
@@ -279,7 +286,17 @@ const GatewaySettingsCard: React.FC<Props> = ({ gateway }) => {
                 </label>
                 <input
                   id={inputId}
-                  type={field.kind === "password" ? "password" : "text"}
+                  // القناع (••••1234) يُعرض نصاً لا نقاطاً: إخفاؤه خلف
+                  // input[type=password] يحوّله إلى ثماني نقاط عمياء، فيظنّ
+                  // الأدمن أن مفتاحه قُصّ. إظهار آخر أربع خانات يسمح
+                  // بمطابقته بالعين. ما يُخفى هو السرّ نفسه، والخادم لا
+                  // يُرسله أصلاً.
+                  type={
+                    field.kind === "password" &&
+                    !(field.secret && !touched[field.key])
+                      ? "password"
+                      : "text"
+                  }
                   value={values[field.key] || ""}
                   placeholder={field.placeholder}
                   autoComplete="off"

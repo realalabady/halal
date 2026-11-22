@@ -54,7 +54,13 @@ const round2 = (n) => Math.round(n * 100) / 100;
  * يحسب تسعير الطلب من مستندات المنتجات وإعدادات الشحن.
  * لا يثق بأي سعر أو اسم أو مبلغ قادم من العميل.
  */
-async function computeOrderPricing(storeId, items) {
+async function computeOrderPricing(storeId, items, 
+/**
+ * الاستلام من الفرع لا شحن فيه. بدون هذا الوسيط كان الخادم يُضيف تكلفة
+ * الشحن إلى طلب استلام، فلا يطابق إجمالي العميل ويُرفض كل دفع عبر بوابة
+ * في طلبات الاستلام من الفرع.
+ */
+fulfillment = "delivery") {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j;
     if (!Array.isArray(items) || items.length === 0) {
         throw new functions.https.HttpsError("invalid-argument", "عناصر الطلب مطلوبة");
@@ -95,7 +101,7 @@ async function computeOrderPricing(storeId, items) {
     try {
         const settingsDoc = await (0, storePaths_1.settingsRef)(storeId, "store").get();
         const data = settingsDoc.data();
-        const shipping = data === null || data === void 0 ? void 0 : data.shipping;
+        const shipping = fulfillment === "pickup" ? null : data === null || data === void 0 ? void 0 : data.shipping;
         if (shipping) {
             const threshold = Number((_f = shipping.freeShippingThreshold) !== null && _f !== void 0 ? _f : 0);
             const defaultCost = Number((_g = shipping.defaultShippingCost) !== null && _g !== void 0 ? _g : 0);

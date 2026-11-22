@@ -10,39 +10,6 @@
  *    (القاعدة في firestore.rules ترفض أي كتابة أدمن تلمس paymentGateways)،
  *    فـ connected: true تصريح لا يصدر إلا بعد اختبار شبكي حقيقي.
  */
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.isGatewayConfigError = exports.GatewayConfigError = void 0;
 exports.maskSecret = maskSecret;
@@ -51,11 +18,16 @@ exports.writeGatewayCredentials = writeGatewayCredentials;
 exports.recordConnectionResult = recordConnectionResult;
 exports.setGatewayEnabled = setGatewayEnabled;
 exports.mirrorPublicStatus = mirrorPublicStatus;
+exports.syncPublicStatus = syncPublicStatus;
 exports.markGatewayUnhealthy = markGatewayUnhealthy;
 exports.readGatewayAdminView = readGatewayAdminView;
 exports.buildGatewayContext = buildGatewayContext;
 exports.requireStorefrontBaseUrl = requireStorefrontBaseUrl;
-const admin = __importStar(require("firebase-admin"));
+// FieldValue/Timestamp تُستورد مباشرة من firebase-admin/firestore بدل
+// admin.firestore.* : الشكل الثاني يعتمد على خصائص ساكنة على دالة،
+// وهي تختفي تحت غلاف محاكي الدوال فتفشل الكتابة محلياً. الاستيراد
+// المباشر هو الشكل الموصى به ويعمل في البيئتين بلا فرق.
+const firestore_1 = require("firebase-admin/firestore");
 const storePaths_1 = require("./storePaths");
 class GatewayConfigError extends Error {
 }
@@ -148,25 +120,39 @@ async function loadGatewayCredentials(storeId, adapter) {
 /** يكتب بيانات الاعتماد ويُرجع الحالة إلى "لم تُختبر". */
 async function writeGatewayCredentials(opts) {
     const { storeId, gatewayId, credentials, environment, uid } = opts;
-    await (0, storePaths_1.settingsRef)(storeId, gatewayId).set({
-        credentials,
+    const ref = (0, storePaths_1.settingsRef)(storeId, gatewayId);
+    const existing = (await ref.get()).data() || {};
+    const storedCreds = (existing.credentials || {});
+    // هل تغيّر شيء فعلاً؟
+    //
+    // الحفظ كان يُصفّر حالة الاتصال دائماً، فالأدمن الذي يختبر بنجاح ثم يضغط
+    // "حفظ الإعدادات" كان يُخفي بوابةً عاملة دون أن يدري. إعادة حفظ نفس القيم
+    // ليست تغييراً، فلا تُبطل اتصالاً مُثبتاً.
+    const credentialsChanged = Object.entries(credentials).some(([key, value]) => storedCreds[key] !== value);
+    const environmentChanged = existing.environment !== environment;
+    const changed = credentialsChanged || environmentChanged;
+    await ref.set({
+        credentials: { ...storedCreds, ...credentials },
         environment,
-        connection: { status: "untested" },
-        // أي مفتاح جديد يُبطل الرمز المؤقّت المخزّن
-        tokenCache: admin.firestore.FieldValue.delete(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        ...(changed
+            ? {
+                connection: { status: "untested" },
+                // مفتاح أو بيئة جديدة تُبطل الرمز المؤقّت المخزّن
+                tokenCache: firestore_1.FieldValue.delete(),
+            }
+            : {}),
+        updatedAt: firestore_1.FieldValue.serverTimestamp(),
         updatedBy: uid,
     }, { merge: true });
-    // حفظ مفاتيح جديدة لا يعني أنها تعمل: نُخفي البوابة حتى ينجح اختبار.
-    await mirrorPublicStatus(storeId, gatewayId, {
-        connected: false,
-        environment,
-    });
+    await syncPublicStatus({ storeId, gatewayId });
+    // يُعاد للنادي: رسالة "اضغط اختبار الاتصال" بعد حفظ لم يغيّر
+    // شيئاً تجعل الأدمن يظنّ أن اختباره الناجح أُلغي.
+    return { changed };
 }
 /** يكتب نتيجة اختبار الاتصال في المستند الخاص، ويُحدّث النسخة العامة. */
 async function recordConnectionResult(opts) {
     const { storeId, gatewayId, environment, minAmountSAR, result } = opts;
-    const now = admin.firestore.FieldValue.serverTimestamp();
+    const now = firestore_1.FieldValue.serverTimestamp();
     await (0, storePaths_1.settingsRef)(storeId, gatewayId).set({
         environment,
         connection: {
@@ -179,32 +165,39 @@ async function recordConnectionResult(opts) {
         },
         updatedAt: now,
     }, { merge: true });
-    await mirrorPublicStatus(storeId, gatewayId, {
-        connected: result.success,
-        environment,
-        minAmountSAR: typeof minAmountSAR === "number" ? minAmountSAR : null,
-        ...(result.success ? { lastVerifiedAt: now } : {}),
-    });
+    await syncPublicStatus({ storeId, gatewayId, minAmountSAR });
 }
 /** يفعّل/يعطّل عرض البوابة للعميل دون المساس ببيانات الاعتماد. */
 async function setGatewayEnabled(storeId, gatewayId, enabled) {
     await (0, storePaths_1.settingsRef)(storeId, gatewayId).set({
         enabled,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firestore_1.FieldValue.serverTimestamp(),
     }, { merge: true });
-    await mirrorPublicStatus(storeId, gatewayId, { enabled });
+    await syncPublicStatus({ storeId, gatewayId });
 }
 /**
  * ينسخ الحالة الخالية من الأسرار إلى المستند العام الذي يقرأه المتجر.
  * دمج بمسارات النقطة حتى لا تُمسح بوابة أخرى أو بقية إعدادات المتجر.
  */
 async function mirrorPublicStatus(storeId, gatewayId, patch) {
+    var _a;
+    // النسخة العامة يجب أن تحمل enabled دائماً.
+    //
+    // كان يُكتب فقط عند تبديل المفتاح يدوياً (setGatewayEnabled)، فبوابة
+    // وصلت واتصلت ولم يلمس الأدمن مفتاحها تبقى بلا الحقل في النسخة العامة،
+    // ويقرأه الـ checkout undefined فيُخفيها إلى الأبد رغم أن اللوحة تعرض
+    // المفتاح مُشغّلاً. كما كانت القيمتان (الخاصة والعامة) تفترقان.
+    // المصدر الواحد هو المستند الخاص: الغياب يعني "مُفعّلة".
+    if (patch.enabled === undefined) {
+        const snap = await (0, storePaths_1.settingsRef)(storeId, gatewayId).get();
+        patch = { ...patch, enabled: ((_a = snap.data()) === null || _a === void 0 ? void 0 : _a.enabled) !== false };
+    }
     const update = {};
     for (const [key, value] of Object.entries(patch)) {
         if (value === undefined)
             continue;
         update[`paymentGateways.${gatewayId}.${key}`] =
-            value === null ? admin.firestore.FieldValue.delete() : value;
+            value === null ? firestore_1.FieldValue.delete() : value;
     }
     if (Object.keys(update).length === 0)
         return;
@@ -212,7 +205,7 @@ async function mirrorPublicStatus(storeId, gatewayId, patch) {
     try {
         await ref.update(update);
     }
-    catch (_a) {
+    catch (_b) {
         // المستند غير موجود بعد: set + merge لا يفهم مسارات النقطة، فنبني الشكل.
         const nested = {};
         for (const [key, value] of Object.entries(patch)) {
@@ -224,11 +217,46 @@ async function mirrorPublicStatus(storeId, gatewayId, patch) {
     }
 }
 /**
+ * النسخة العامة = إسقاط للمستند الخاص، لا كتابة مستقلّة.
+ *
+ * لماذا: كانت أربعة مواضع تكتب في النسخة العامة كلٌّ بما يعرفه، فافترقت عن
+ * الحقيقة. آخر ما حدث فعلياً: اختبار ناجح كتب connected: true ثم ضغطة
+ * "حفظ الإعدادات" كتبت connected: false فوقه — فبقيت اللوحة تقول "متصل"
+ * بينما يُخفي الـ checkout البوابة. الآن تقرأ هذه الدالة المستند الخاص
+ * وتشتقّ منه كل شيء، فلا يمكن للاثنين أن يفترقا مهما كان ترتيب النداءات.
+ *
+ * ينادونها بعد كتابة المستند الخاص، لا قبلها.
+ */
+async function syncPublicStatus(opts) {
+    const { storeId, gatewayId, credentialFields = [], minAmountSAR } = opts;
+    const snap = await (0, storePaths_1.settingsRef)(storeId, gatewayId).get();
+    const data = snap.data() || {};
+    const connection = (data.connection || {});
+    const patch = {
+        // الغياب يعني "مُفعّلة"، نفس عرف لوحة التحكم
+        enabled: data.enabled !== false,
+        // متّصلة فقط إذا قال المستند الخاص ذلك
+        connected: connection.status === "connected",
+    };
+    // البيئة تُكتب فقط عندما نعرفها حقاً: مستند قديم بلا الحقل ولا قائمة
+    // بالحقول المطلوبة لا يُخمَّن له شيء، فتبقى القيمة السابقة كما هي.
+    if (data.environment !== undefined || credentialFields.length > 0) {
+        patch.environment = resolveEnvironment(data, credentialFields);
+    }
+    if (typeof minAmountSAR === "number") {
+        patch.minAmountSAR = minAmountSAR;
+    }
+    if (connection.lastVerifiedAt instanceof firestore_1.Timestamp) {
+        patch.lastVerifiedAt = connection.lastVerifiedAt;
+    }
+    await mirrorPublicStatus(storeId, gatewayId, patch);
+}
+/**
  * تُنادى من مسار إنشاء الدفع عندما يرفض المزوّد بيانات الاعتماد.
  * تُنزّل البوابة فوراً حتى لا يرى المشتري التالي خياراً ميّتاً.
  */
 async function markGatewayUnhealthy(storeId, gatewayId, reason) {
-    const now = admin.firestore.FieldValue.serverTimestamp();
+    const now = firestore_1.FieldValue.serverTimestamp();
     await (0, storePaths_1.settingsRef)(storeId, gatewayId).set({
         connection: {
             status: "failed",
@@ -238,7 +266,7 @@ async function markGatewayUnhealthy(storeId, gatewayId, reason) {
         },
         updatedAt: now,
     }, { merge: true });
-    await mirrorPublicStatus(storeId, gatewayId, { connected: false });
+    await syncPublicStatus({ storeId, gatewayId });
 }
 /** العرض الذي تُرجعه لوحة التحكم: حقول مُقنّعة + حالة محفوظة، بلا أي سرّ. */
 async function readGatewayAdminView(storeId, adapter, secretFields) {
@@ -256,7 +284,7 @@ async function readGatewayAdminView(storeId, adapter, secretFields) {
                 : "";
         fields[field] = secretFields.includes(field) ? maskSecret(raw) : raw;
     }
-    const asIso = (value) => value instanceof admin.firestore.Timestamp
+    const asIso = (value) => value instanceof firestore_1.Timestamp
         ? value.toDate().toISOString()
         : undefined;
     return {

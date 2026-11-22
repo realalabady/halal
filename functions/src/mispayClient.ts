@@ -14,6 +14,11 @@
  */
 
 import * as admin from "firebase-admin";
+// FieldValue/Timestamp تُستورد مباشرة من firebase-admin/firestore بدل
+// admin.firestore.* : الشكل الثاني يعتمد على خصائص ساكنة على دالة،
+// وهي تختفي تحت غلاف محاكي الدوال فتفشل الكتابة محلياً. الاستيراد
+// المباشر هو الشكل الموصى به ويعمل في البيئتين بلا فرق.
+import { FieldValue } from "firebase-admin/firestore";
 import {
   createDecipheriv,
   createHash,
@@ -530,7 +535,7 @@ export const MISPAY_WEBHOOK_IPS = {
 /** يمسح الرمز المخزّن (يُستخدم عند تغيير المفاتيح). */
 export async function clearMisPayTokenCache(storeId: string): Promise<void> {
   await settingsRef(storeId, "mispay").set(
-    { tokenCache: admin.firestore.FieldValue.delete() },
+    { tokenCache: FieldValue.delete() },
     { merge: true },
   );
 }

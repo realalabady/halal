@@ -1,5 +1,9 @@
 import fetch from "node-fetch";
 import * as admin from "firebase-admin";
+// FieldValue/Timestamp تُستورد مباشرة بدل admin.firestore.* : الشكل
+// الثاني خصائص ساكنة على دالة، وتختفي تحت غلاف محاكي الدوال فتفشل كل
+// كتابة محلياً (خصم المخزون، رموز الدخول). السلوك في الإنتاج واحد.
+import { FieldValue } from "firebase-admin/firestore";
 
 const CJ_BASE_URL = "https://developers.cjdropshipping.com/api2.0/v1";
 
@@ -45,7 +49,7 @@ async function getValidAccessToken(storeId: string): Promise<string> {
         accessToken: refreshed.accessToken,
         refreshToken: refreshed.refreshToken,
         tokenExpiresAt: new Date(refreshed.accessTokenExpiryDate),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       });
       return refreshed.accessToken;
     } catch {
@@ -59,7 +63,7 @@ async function getValidAccessToken(storeId: string): Promise<string> {
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken,
     tokenExpiresAt: new Date(tokens.accessTokenExpiryDate),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
   });
   return tokens.accessToken;
 }
@@ -270,7 +274,7 @@ export async function testConnection(
           accessToken: tokens.accessToken,
           refreshToken: tokens.refreshToken,
           tokenExpiresAt: new Date(tokens.accessTokenExpiryDate),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true },
       );

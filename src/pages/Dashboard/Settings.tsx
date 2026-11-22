@@ -8,6 +8,7 @@ import {
   Save,
   Loader,
   Mail,
+  AlertTriangle,
 } from "lucide-react";
 import { useStore } from "../../store/useStore";
 import {
@@ -35,6 +36,7 @@ import "./Settings.css";
 const Settings: React.FC = () => {
   const { user } = useStore();
   const [loading, setLoading] = useState(false);
+  const [savingStoreUrl, setSavingStoreUrl] = useState(false);
   const [activeTab, setActiveTab] = useState("store");
 
   const [storeSettings, setStoreSettings] = useState({
@@ -152,6 +154,36 @@ const Settings: React.FC = () => {
       alert("حدث خطأ أثناء حفظ الإعدادات");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // رابط المتجر حقل في تبويب «المتجر»، لكن أثره يظهر في تبويب «المدفوعات»:
+  // بدونه يفشل كل دفع عبر بوابة. فالتنبيه والإصلاح يُعرضان هنا، حيث يقف
+  // الأدمن فعلاً، لا في التبويب الذي يحتوي الحقل.
+  const currentOrigin =
+    typeof window !== "undefined" ? window.location.origin : "";
+  // لا نقترح localhost: حفظه يُرسل المشترين الحقيقيين إلى جهاز الأدمن.
+  const originIsLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|$)/.test(
+    currentOrigin,
+  );
+  const storeUrlMissing = !storeSettings.storeUrl?.trim();
+
+  const handleUseCurrentOrigin = async () => {
+    const next = { ...storeSettings, storeUrl: currentOrigin };
+    setSavingStoreUrl(true);
+    try {
+      await updateSettings({
+        store: next,
+        shipping: shippingSettings,
+        notifications: notificationSettings,
+        payment: { methods: paymentMethods },
+      });
+      setStoreSettings(next);
+    } catch (error) {
+      console.error("Error saving store url:", error);
+      alert("تعذّر حفظ رابط المتجر");
+    } finally {
+      setSavingStoreUrl(false);
     }
   };
 
@@ -611,6 +643,39 @@ const Settings: React.FC = () => {
                     القديمة tamaraSaveSettings/tabbySaveSettings ما زالت
                     منشورة لكن لا شيء يناديها، والمفاتيح المحفوظة سابقاً
                     تُقرأ كما هي بفضل التوافق الخلفي في loadGatewayCredentials. */}
+
+                {storeUrlMissing && (
+                  <div className="gateway-url-alert">
+                    <AlertTriangle size={20} />
+                    <div className="gateway-url-alert-body">
+                      <strong>رابط المتجر غير مضبوط</strong>
+                      <p>
+                        بوابات الدفع تحتاجه لإعادة العميل بعد الدفع. بدونه
+                        يفشل زرّ «تأكيد الطلب» عند اختيار أي بوابة، ولو كانت
+                        متّصلة.
+                      </p>
+                      {originIsLocal ? (
+                        <p className="gateway-url-alert-note">
+                          أنت على نسخة محلية، فلا يصحّ حفظ هذا العنوان.
+                          اضبط الرابط العام من تبويب «المتجر» ← رابط المتجر.
+                        </p>
+                      ) : null}
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={handleUseCurrentOrigin}
+                      disabled={originIsLocal || savingStoreUrl}
+                    >
+                      {savingStoreUrl ? (
+                        <Loader size={16} className="spin" />
+                      ) : (
+                        <span dir="ltr">{currentOrigin}</span>
+                      )}
+                      <span>استخدم هذا الرابط</span>
+                    </button>
+                  </div>
+                )}
 
                 {PAYMENT_GATEWAYS.map((gateway) => (
                   <GatewaySettingsCard key={gateway.id} gateway={gateway} />

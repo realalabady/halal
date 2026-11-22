@@ -20,6 +20,7 @@ import type { LucideIcon } from "lucide-react";
 
 /** البوابات المدعومة. المعرّف هو اسم مستند الإعدادات الخاص بها أيضاً. */
 export type GatewayId =
+  | "mockpay"
   | "mispay"
   | "madfu"
   | "neoleap"
@@ -280,16 +281,48 @@ export const PAYMENT_GATEWAYS: readonly GatewayDescriptor[] = [
       },
       {
         key: "merchantCode",
-        label: "رمز التاجر (اختياري)",
+        label: "رمز التاجر (Merchant Code)",
         kind: "text",
-        required: false,
+        required: true,
         secret: false,
-        help: "املأه فقط إذا أعطاك تابي رمزاً خاصاً بالمتجر.",
+        help:
+          "مطلوب: تابي ترفض إنشاء جلسة الدفع بدونه. تجده في لوحة تابي " +
+          "ضمن بيانات المتجر، ويكون غالباً رمز بلد المتجر مثل SAU.",
       },
       ENVIRONMENT_FIELD,
     ],
   },
 ];
+
+/**
+ * بوابة وهمية تظهر في وضع المحاكي فقط (VITE_USE_EMULATORS=true).
+ * تسمح بتشغيل التدفّق كاملاً محلياً دون حساب تاجر حقيقي.
+ */
+const MOCK_GATEWAY: GatewayDescriptor = {
+  id: "mockpay",
+  name: "بوابة وهمية (اختبار)",
+  description: "للاختبار المحلي فقط — لا تظهر في الإنتاج",
+  logo: "/payments/mockpay.svg",
+  logoAlt: "بوابة وهمية",
+  fallbackIcon: Wallet,
+  minAmountSAR: 50,
+  flow: "redirect",
+  credentialFields: [
+    {
+      key: "apiKey",
+      label: "مفتاح وهمي",
+      kind: "text",
+      required: true,
+      secret: false,
+      help: 'أي قيمة تنجح. ابدأها بـ bad_ لاختبار مسار الفشل.',
+    },
+    ENVIRONMENT_FIELD,
+  ],
+};
+
+if (import.meta.env.DEV && import.meta.env.VITE_USE_EMULATORS === "true") {
+  (PAYMENT_GATEWAYS as GatewayDescriptor[]).push(MOCK_GATEWAY);
+}
 
 export const GATEWAY_BY_ID: Readonly<Partial<Record<string, GatewayDescriptor>>> =
   Object.freeze(

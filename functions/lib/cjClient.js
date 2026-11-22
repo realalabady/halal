@@ -51,6 +51,10 @@ exports.getCJBalance = getCJBalance;
 exports.testConnection = testConnection;
 const node_fetch_1 = __importDefault(require("node-fetch"));
 const admin = __importStar(require("firebase-admin"));
+// FieldValue/Timestamp تُستورد مباشرة بدل admin.firestore.* : الشكل
+// الثاني خصائص ساكنة على دالة، وتختفي تحت غلاف محاكي الدوال فتفشل كل
+// كتابة محلياً (خصم المخزون، رموز الدخول). السلوك في الإنتاج واحد.
+const firestore_1 = require("firebase-admin/firestore");
 const CJ_BASE_URL = "https://developers.cjdropshipping.com/api2.0/v1";
 // إعدادات CJ خاصة بكل متجر: stores/{storeId}/settings/cjDropshipping.
 // حساب CJ (والتوكن المخزّن معه) لا يُشارك بين المتاجر.
@@ -81,7 +85,7 @@ async function getValidAccessToken(storeId) {
                 accessToken: refreshed.accessToken,
                 refreshToken: refreshed.refreshToken,
                 tokenExpiresAt: new Date(refreshed.accessTokenExpiryDate),
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: firestore_1.FieldValue.serverTimestamp(),
             });
             return refreshed.accessToken;
         }
@@ -95,7 +99,7 @@ async function getValidAccessToken(storeId) {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         tokenExpiresAt: new Date(tokens.accessTokenExpiryDate),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firestore_1.FieldValue.serverTimestamp(),
     });
     return tokens.accessToken;
 }
@@ -222,7 +226,7 @@ async function testConnection(storeId, email, apiKey) {
                 accessToken: tokens.accessToken,
                 refreshToken: tokens.refreshToken,
                 tokenExpiresAt: new Date(tokens.accessTokenExpiryDate),
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: firestore_1.FieldValue.serverTimestamp(),
             }, { merge: true });
             console.log("CJ connection test SUCCESS - tokens saved to Firestore");
             return { success: true, message: "تم الاتصال بنجاح مع CJ Dropshipping!" };

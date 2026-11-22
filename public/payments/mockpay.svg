@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 70" role="img" aria-label="Mock Pay">
+  <title>Mock Pay</title>
+  <rect width="160" height="70" rx="10" fill="#fff"/>
+  <rect x="1" y="1" width="158" height="68" rx="9" fill="none" stroke="#7c3aed" stroke-opacity="0.35" stroke-width="2" stroke-dasharray="6 4"/>
+  <text x="80" y="41" text-anchor="middle" font-family="Tajawal, Arial, sans-serif" font-size="22" font-weight="700" fill="#7c3aed">MockPay</text>
+</svg>

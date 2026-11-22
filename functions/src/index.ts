@@ -1,5 +1,9 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
+// FieldValue/Timestamp تُستورد مباشرة بدل admin.firestore.* : الشكل
+// الثاني خصائص ساكنة على دالة، وتختفي تحت غلاف محاكي الدوال فتفشل كل
+// كتابة محلياً (خصم المخزون، رموز الدخول). السلوك في الإنتاج واحد.
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { JWT } from "google-auth-library";
 import { randomUUID } from "crypto";
 import * as cj from "./cjClient";
@@ -180,11 +184,12 @@ async function validateOrderAmount(
     | Array<{ productId?: string; reference_id?: string; quantity?: number }>
     | undefined,
   clientAmount: number,
+  fulfillment: "delivery" | "pickup" = "delivery",
 ): Promise<number> {
   // الحساب نفسه انتقل إلى orderPricing.ts ليتشاركه مسار بوابات الدفع، الذي
   // يحتاج التفصيل (الأصناف، الشحن، حصّة الضريبة) وليس الإجمالي فقط. مصدر
   // واحد للتسعير: أي اختلاف هنا يعني دفعة بمبلغ خاطئ.
-  const pricing = await computeOrderPricing(storeId, items);
+  const pricing = await computeOrderPricing(storeId, items, fulfillment);
   return validateOrderAmountFromPricing(pricing, clientAmount);
 }
 
@@ -738,7 +743,7 @@ export const merchantSaveApiSettings = functions.https.onCall(
         currencyCode,
         enabled,
         syncToken,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
         updatedBy: context.auth?.uid || null,
       },
       { merge: true },
@@ -941,7 +946,7 @@ export const cjCreateOrder = functions.https.onCall(async (data, context) => {
           cjOrderId: result.data.orderId || result.data.orderNum,
           cjOrderNum: result.data.orderNum,
           cjOrderStatus: "CREATED",
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
         });
     }
 
@@ -1042,7 +1047,7 @@ export const onOrderCreated = functions.firestore
           const newStock = Math.max(0, currentStock - quantity);
           tx.update(productRef, {
             stock: newStock,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
           });
         });
       }
@@ -1070,7 +1075,7 @@ export const onOrderCreated = functions.firestore
         console.log(`Order confirmation email sent for order ${orderId}`);
         await snap.ref.update({
           emailSent: true,
-          emailSentAt: admin.firestore.FieldValue.serverTimestamp(),
+          emailSentAt: FieldValue.serverTimestamp(),
         });
       } else {
         console.error(`Failed to send email for order ${orderId}:`, emailResult.error);
@@ -1099,7 +1104,7 @@ export const onOrderCreated = functions.firestore
           console.log(`Emkan owner notification sent for order ${orderId}`);
           await snap.ref.update({
             ownerNotified: true,
-            ownerNotifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+            ownerNotifiedAt: FieldValue.serverTimestamp(),
           });
         } else if (!ownerResult.skipped) {
           console.error(
@@ -1170,7 +1175,7 @@ export const onOrderCreated = functions.firestore
           cjOrderId: result.data.orderId || "",
           cjOrderNum: result.data.orderNum || "",
           cjOrderStatus: "CREATED",
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
         });
         console.log(`CJ order created for Firestore order ${orderId}`);
       } else {
@@ -1246,7 +1251,7 @@ export const cjSyncOrderStatuses = functions.https.onCall(
           const cjOrder = cjResult.data;
           const updates: Record<string, unknown> = {
             cjOrderStatus: cjOrder.orderStatus,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
           };
 
           // تحديث رقم التتبع إذا متوفر
@@ -1402,7 +1407,7 @@ export const paypalCreateOrder = functions.https.onCall(
         amount: validatedAmount,
         currency: currency || "SAR",
         status: "CREATED",
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
       });
 
       return result;
@@ -1467,7 +1472,7 @@ export const paypalCaptureOrder = functions.https.onCall(
       await pendingDoc.ref.update({
         status: result.status,
         captureId: result.captureId,
-        capturedAt: admin.firestore.FieldValue.serverTimestamp(),
+        capturedAt: FieldValue.serverTimestamp(),
       });
 
       // تحديث الطلب في Firestore إذا موجود
@@ -1476,8 +1481,8 @@ export const paypalCaptureOrder = functions.https.onCall(
           paymentStatus: "paid",
           paypalOrderId: paypalOrderId,
           paypalCaptureId: result.captureId,
-          paidAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          paidAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
         });
       }
 
@@ -1633,7 +1638,7 @@ export const tamaraCreateCheckout = functions.https.onCall(
         totalAmount: validatedTamaraTotal,
         currency: currency || "SAR",
         status: "CREATED",
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
       });
 
       return result;
@@ -1727,8 +1732,8 @@ export const tamaraAuthorizeOrder = functions.https.onCall(
           paymentStatus: "paid",
           tamaraOrderId: orderId,
           tamaraStatus: result.status,
-          paidAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          paidAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
         });
       }
 
@@ -1758,7 +1763,7 @@ export const tamaraSaveSettings = functions.https.onCall(
     try {
       await settingsRef(storeId, "tamara").set({
         apiToken,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
         updatedBy: context.auth!.uid,
       });
 
@@ -1953,7 +1958,7 @@ export const tabbyCreateCheckout = functions.https.onCall(
         amount: validatedTabbyAmount,
         currency: currency || "SAR",
         status: "CREATED",
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
       });
 
       return result;
@@ -2015,8 +2020,8 @@ export const tabbyCapturePayment = functions.https.onCall(
           paymentStatus: "paid",
           tabbyPaymentId: paymentId,
           tabbyStatus: result.status,
-          paidAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          paidAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
         });
       }
 
@@ -2079,7 +2084,7 @@ export const tabbySaveSettings = functions.https.onCall(
       await settingsRef(storeId, "tabby").set({
         publicKey,
         secretKey,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
         updatedBy: context.auth!.uid,
       });
 
@@ -2661,7 +2666,7 @@ const requireSignedIn = (
 };
 
 const toMillis = (value: unknown): number => {
-  if (value instanceof admin.firestore.Timestamp) return value.toMillis();
+  if (value instanceof Timestamp) return value.toMillis();
   return 0;
 };
 
@@ -2724,17 +2729,18 @@ export const authSendLoginOtp = functions.https.onCall(
       sendCount: keepWindow ? (existing?.sendCount || 0) + 1 : 1,
       firstSentAt: keepWindow
         ? existing?.firstSentAt
-        : admin.firestore.Timestamp.fromMillis(now),
-      lastSentAt: admin.firestore.Timestamp.fromMillis(now),
-      expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+        : Timestamp.fromMillis(now),
+      lastSentAt: Timestamp.fromMillis(now),
+      expiresAt: Timestamp.fromDate(expiresAt),
     });
 
-    const result = await sendLoginOtpEmail(
-      storeId,
-      email,
-      code,
-      OTP_TTL_MINUTES,
-    );
+    // في المحاكي لا يوجد مزوّد بريد: نطبع الرمز في السجلّ بدل الإرسال حتى
+    // يمكن اختبار التدفّق كاملاً محلياً. الحارس FUNCTIONS_EMULATOR غير موجود
+    // في الدوال المنشورة، فلا أثر لهذا المسار في الإنتاج.
+    const result = process.env.FUNCTIONS_EMULATOR
+      ? (console.log(`[emulator] رمز الدخول لـ ${email}: ${code}`),
+        { success: true as const })
+      : await sendLoginOtpEmail(storeId, email, code, OTP_TTL_MINUTES);
 
     if (!result.success) {
       await ref.delete().catch(() => undefined);
@@ -2870,3 +2876,7 @@ export const mispayWebhook = paymentGatewayFns.mispayWebhook;
 export const madfuWebhook = paymentGatewayFns.madfuWebhook;
 export const neoleapReturn = paymentGatewayFns.neoleapReturn;
 export const paymentReconcileSweep = paymentGatewayFns.paymentReconcileSweep;
+
+// صفحة الدفع الوهمية: تُصدَّر دائماً لكنها لا تفعل شيئاً خارج المحاكي،
+// لأن البوابة الوهمية نفسها غير مسجّلة في الإنتاج.
+export const mockPayPage = paymentGatewayFns.mockPayPage;

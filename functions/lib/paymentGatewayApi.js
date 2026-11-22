@@ -42,11 +42,16 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GatewayConfigError = void 0;
+exports.resolveStorefrontUrlOrFail = resolveStorefrontUrlOrFail;
 exports.normalizeSaudiMobile = normalizeSaudiMobile;
 exports.resolvePickupAddress = resolvePickupAddress;
 exports.buildPaymentGatewayFunctions = buildPaymentGatewayFunctions;
 const functions = __importStar(require("firebase-functions"));
-const admin = __importStar(require("firebase-admin"));
+// FieldValue/Timestamp تُستورد مباشرة من firebase-admin/firestore بدل
+// admin.firestore.* : الشكل الثاني يعتمد على خصائص ساكنة على دالة،
+// وهي تختفي تحت غلاف محاكي الدوال فتفشل الكتابة محلياً. الاستيراد
+// المباشر هو الشكل الموصى به ويعمل في البيئتين بلا فرق.
+const firestore_1 = require("firebase-admin/firestore");
 const crypto_1 = require("crypto");
 const storePaths_1 = require("./storePaths");
 const gatewayRegistry_1 = require("./gatewayRegistry");
@@ -55,6 +60,7 @@ Object.defineProperty(exports, "GatewayConfigError", { enumerable: true, get: fu
 const gatewayHttp_1 = require("./gatewayHttp");
 const orderPricing_1 = require("./orderPricing");
 const paymentReconcile_1 = require("./paymentReconcile");
+const gatewayTypes_1 = require("./gatewayTypes");
 /** ساعتان: بعدها تُعدّ محاولة الدفع منتهية. */
 const PENDING_TTL_MS = 2 * 60 * 60 * 1000;
 const asString = (value) => typeof value === "string" ? value.trim() : "";
@@ -68,6 +74,22 @@ function toHttpsError(error, fallback) {
     }
     console.error(fallback, error);
     throw new functions.https.HttpsError("internal", fallback);
+}
+/**
+ * يُحضر رابط المتجر أو يفشل برسالة يفهمها الأدمن.
+ *
+ * دالة منفصلة لا سطرين داخل النداء: الخطأ الذي أصلحته هنا كان تسرّب
+ * GatewayConfigError خارج الدالة القابلة للنداء، فيصل العميل كـ INTERNAL
+ * بلا نصّ — ولا شيء في الواجهة يدلّ على أن الناقص حقل واحد. كونها دالة
+ * مُصدَّرة يجعل هذا السلوك قابلاً للاختبار في verify-gateways.
+ */
+function resolveStorefrontUrlOrFail(ctx) {
+    try {
+        return (0, gatewayStore_1.requireStorefrontBaseUrl)(ctx);
+    }
+    catch (error) {
+        toHttpsError(error, "تعذّر بدء عملية الدفع. حاول مرة أخرى.");
+    }
 }
 /**
  * يرقّم هاتفاً سعودياً إلى الشكل الذي تتوقّعه البوابات (05XXXXXXXX).
@@ -151,7 +173,7 @@ function buildPaymentGatewayFunctions(deps) {
             throw new functions.https.HttpsError("invalid-argument", `الحقول التالية مطلوبة: ${missing.join(", ")}`);
         }
         try {
-            await (0, gatewayStore_1.writeGatewayCredentials)({
+            const { changed } = await (0, gatewayStore_1.writeGatewayCredentials)({
                 storeId,
                 gatewayId: adapter.id,
                 credentials,
@@ -161,9 +183,14 @@ function buildPaymentGatewayFunctions(deps) {
             if (typeof (data === null || data === void 0 ? void 0 : data.enabled) === "boolean") {
                 await (0, gatewayStore_1.setGatewayEnabled)(storeId, adapter.id, data.enabled);
             }
+            // الرسالة تتبع ما حدث فعلاً. كانت ثابتة تطلب إعادة الاختبار حتى حين
+            // لا يتغيّر شيء، فيظنّ الأدمن أن اختباره الناجح أُلغي ويدور في حلقة.
             return {
                 success: true,
-                message: "تم حفظ الإعدادات. اضغط \"اختبار الاتصال\" لتفعيل البوابة للعملاء.",
+                changed,
+                message: changed
+                    ? "تم حفظ الإعدادات. اضغط \"اختبار الاتصال\" لتفعيل البوابة للعملاء."
+                    : "تم الحفظ. لم تتغيّر أي قيمة، وحالة الاتصال كما هي.",
             };
         }
         catch (error) {
@@ -218,6 +245,17 @@ function buildPaymentGatewayFunctions(deps) {
         const adapter = (0, gatewayRegistry_1.requireAdapter)(data === null || data === void 0 ? void 0 : data.gateway);
         try {
             const view = await (0, gatewayStore_1.readGatewayAdminView)(storeId, adapter, (0, gatewayRegistry_1.secretFieldsOf)(adapter.id));
+            // إصلاح ذاتي: النسخة العامة تُعاد اشتقاقها من المستند الخاص عند كل
+            // فتح لتبويب الدفع. أي انحراف قديم (من إصدار سابق كان يكتبها من
+            // أربعة مواضع) يُصحَّح من تلقائه دون تدخّل الأدمن.
+            await (0, gatewayStore_1.syncPublicStatus)({
+                storeId,
+                gatewayId: adapter.id,
+                credentialFields: adapter.requiredCredentials,
+                minAmountSAR: adapter.minAmountSAR,
+            }).catch((error) => {
+                console.error(`[${adapter.id}] تعذّر مزامنة الحالة العامة:`, error);
+            });
             return { gateway: adapter.id, ...view };
         }
         catch (error) {
@@ -249,7 +287,8 @@ function buildPaymentGatewayFunctions(deps) {
         // ===== التسعير على الخادم =====
         // الأسعار والأسماء تُقرأ من مستندات المنتجات؛ ما يُرسله المتصفّح
         // يُستخدم للتحقق فقط، والمبلغ الذي تراه البوابة هو مبلغ الخادم.
-        const pricing = await (0, orderPricing_1.computeOrderPricing)(storeId, data === null || data === void 0 ? void 0 : data.items);
+        const fulfillmentMode = (data === null || data === void 0 ? void 0 : data.fulfillment) === "pickup" ? "pickup" : "delivery";
+        const pricing = await (0, orderPricing_1.computeOrderPricing)(storeId, data === null || data === void 0 ? void 0 : data.items, fulfillmentMode);
         await (0, orderPricing_1.validateOrderAmountFromPricing)(pricing, Number(data === null || data === void 0 ? void 0 : data.total));
         if (adapter.minAmountSAR && pricing.total < adapter.minAmountSAR) {
             throw new functions.https.HttpsError("failed-precondition", `الحد الأدنى لهذه الطريقة ${adapter.minAmountSAR} ر.س`);
@@ -258,7 +297,7 @@ function buildPaymentGatewayFunctions(deps) {
         if (!mobile) {
             throw new functions.https.HttpsError("invalid-argument", "رقم الجوال مطلوب لإتمام الدفع");
         }
-        const fulfillment = (data === null || data === void 0 ? void 0 : data.fulfillment) === "pickup" ? "pickup" : "delivery";
+        const fulfillment = fulfillmentMode;
         const address = ((data === null || data === void 0 ? void 0 : data.address) || {});
         const customerName = asString(data === null || data === void 0 ? void 0 : data.customer) || "عميل";
         // الاستلام من الفرع يُفرغ عنوان العميل، والبوابات ترفض عنواناً فارغاً.
@@ -320,7 +359,11 @@ function buildPaymentGatewayFunctions(deps) {
         }
         const ctx = await (0, gatewayStore_1.buildGatewayContext)(storeId, environment);
         // هنا فقط نُلزم بوجود رابط المتجر: اختبار الاتصال لا يحتاجه.
-        const storefrontUrl = (0, gatewayStore_1.requireStorefrontBaseUrl)(ctx);
+        //
+        // المرور عبر toHttpsError مقصود وليس تزييناً: بدونه يتسرّب
+        // GatewayConfigError خارج الدالة، فيغلّفه Firebase كـ INTERNAL بلا
+        // نصّ — أسوأ شكل ممكن لخطأ يُصلحه الأدمن بحقل واحد في اللوحة.
+        const storefrontUrl = resolveStorefrontUrlOrFail(ctx);
         const returnBase = `${storefrontUrl}/payment/return/${adapter.id}?ref=${encodeURIComponent(orderRef)}`;
         // يُكتب قبل النداء: إن نجح إنشاء الدفع عند المزوّد ثم انقطع الاتصال
         // قبل وصول الردّ، يبقى للمسح الدوري سجلّ يصالحه.
@@ -336,8 +379,8 @@ function buildPaymentGatewayFunctions(deps) {
             vat: pricing.vat,
             currency: "SAR",
             draft,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + PENDING_TTL_MS),
+            createdAt: firestore_1.FieldValue.serverTimestamp(),
+            expiresAt: firestore_1.Timestamp.fromMillis(Date.now() + PENDING_TTL_MS),
         });
         try {
             const result = await adapter.createCheckout({
@@ -378,8 +421,19 @@ function buildPaymentGatewayFunctions(deps) {
             await (0, storePaths_1.pendingPaymentRef)(orderRef).set({
                 status: "FAILED",
                 lastError: detail,
-                resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+                resolvedAt: firestore_1.FieldValue.serverTimestamp(),
             }, { merge: true });
+            if ((0, gatewayTypes_1.isGatewayDeclinedError)(error)) {
+                // رفض تجاري: إعادة المحاولة لن تغيّر شيئاً، ورسالة المزوّد تقول
+                // للمشتري ما يستطيع فعله. ولا نُعطّل البوابة — المفاتيح سليمة
+                // والمشتري التالي قد يُقبل.
+                throw new functions.https.HttpsError("failed-precondition", error.message);
+            }
+            if ((0, gatewayStore_1.isGatewayConfigError)(error)) {
+                // خطأ إعداد داخل المحوّل نفسه: نصُّه يقول للأدمن ما الناقص،
+                // فإخفاؤه خلف "حاول مرة أخرى" يُضيّع الإصلاح الوحيد الممكن.
+                throw new functions.https.HttpsError("failed-precondition", error.message);
+            }
             if (adapter.isAuthError(error)) {
                 // المفاتيح ميّتة: نُخفي البوابة فوراً عن بقية المشترين.
                 await (0, gatewayStore_1.markGatewayUnhealthy)(storeId, adapter.id, detail).catch(() => undefined);
@@ -578,7 +632,7 @@ function buildPaymentGatewayFunctions(deps) {
     const paymentReconcileSweep = functions.pubsub
         .schedule("every 5 minutes")
         .onRun(async () => {
-        const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - 24 * 60 * 60 * 1000);
+        const cutoff = firestore_1.Timestamp.fromMillis(Date.now() - 24 * 60 * 60 * 1000);
         const snap = await (0, storePaths_1.pendingPaymentsCol)()
             .where("status", "==", "CREATED")
             .where("createdAt", ">", cutoff)
@@ -620,7 +674,34 @@ function buildPaymentGatewayFunctions(deps) {
         console.log(`[sweep] فُحصت ${snap.size} دفعة معلّقة: ${reconciled} مُصالَحة، ${expired} منتهية`);
         return null;
     });
+    // ==================== صفحة دفع وهمية (المحاكي فقط) ====================
+    // تحاكي صفحة المزوّد: زر "ادفع" يُعلّم العملية مدفوعة ثم يعيد العميل
+    // إلى رابط العودة، تماماً كما تفعل بوابة حقيقية.
+    const mockPayPage = functions.https.onRequest(async (req, res) => {
+        const ref = asString(req.query.ref);
+        const ret = asString(req.query.ret);
+        const amount = asString(req.query.amount);
+        if (req.method === "POST" || req.query.pay === "1") {
+            const { markMockPaid } = await Promise.resolve().then(() => __importStar(require("./mockGateway")));
+            await markMockPaid(ref);
+            res.redirect(302, ret);
+            return;
+        }
+        res.set("Content-Type", "text/html; charset=utf-8");
+        res.status(200).send(`<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8">
+       <title>بوابة دفع وهمية</title>
+       <body style="font-family:system-ui;padding:3rem;text-align:center">
+         <h1>بوابة دفع وهمية</h1>
+         <p>المرجع: <code>${ref}</code></p>
+         <p>المبلغ: <strong>${amount}</strong> ر.س</p>
+         <p><a id="pay" href="?ref=${encodeURIComponent(ref)}&ret=${encodeURIComponent(ret)}&pay=1"
+            style="display:inline-block;padding:1rem 2rem;background:#15803d;color:#fff;
+            border-radius:8px;text-decoration:none">ادفع الآن</a></p>
+         <p><a id="cancel" href="${ret}&outcome=cancel">إلغاء</a></p>
+       </body></html>`);
+    });
     return {
+        mockPayPage,
         paymentGatewaySaveSettings,
         paymentGatewayTestConnection,
         paymentGatewayGetStatus,

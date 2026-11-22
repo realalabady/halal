@@ -131,6 +131,26 @@ export interface GatewayAdapter {
   isAuthError(error: unknown): boolean;
 }
 
+/**
+ * رفض تجاري من المزوّد: المفاتيح سليمة والنداء صحيح، لكن المزوّد لم يعتمد
+ * هذه العملية (تقييم المشتري، مبلغ خارج حدّه، منتج غير متاح له).
+ *
+ * نوع مستقلّ لأن الفرق عمليّ: خطأ داخلي يُعالَج بإعادة المحاولة، أما الرفض
+ * فإعادة المحاولة لن تغيّره أبداً — على المشتري اختيار طريقة أخرى. وبلا
+ * تمييز كانت رسالة المزوّد الواضحة تُبتلع خلف "حاول مرة أخرى".
+ */
+export class GatewayDeclinedError extends Error {
+  readonly isGatewayDeclinedError = true;
+  constructor(message: string) {
+    super(message);
+    this.name = "GatewayDeclinedError";
+  }
+}
+
+export const isGatewayDeclinedError = (
+  error: unknown,
+): error is GatewayDeclinedError => error instanceof GatewayDeclinedError;
+
 /** خطأ يحمل تصنيفاً حتى يميّز المحوّل أخطاء الاعتماد عن غيرها. */
 export class GatewayAuthError extends Error {
   readonly isGatewayAuthError = true;

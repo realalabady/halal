@@ -14,6 +14,7 @@ import { madfuAdapter } from "./madfuClient";
 import { neoleapAdapter } from "./neoleapClient";
 import { tabbyAdapter } from "./tabbyAdapter";
 import { tamaraAdapter } from "./tamaraAdapter";
+import { isEmulator, mockAdapter } from "./mockGateway";
 
 export const GATEWAY_ADAPTERS: Record<string, GatewayAdapter> = {
   [misPayAdapter.id]: misPayAdapter,
@@ -25,6 +26,12 @@ export const GATEWAY_ADAPTERS: Record<string, GatewayAdapter> = {
   [tamaraAdapter.id]: tamaraAdapter,
   [tabbyAdapter.id]: tabbyAdapter,
 };
+
+// بوابة وهمية للاختبار المحلي الكامل. الحارس هو FUNCTIONS_EMULATOR، وهو
+// متغيّر لا وجود له في الدوال المنشورة، فلا تظهر هذه البوابة في الإنتاج.
+if (isEmulator()) {
+  GATEWAY_ADAPTERS[mockAdapter.id] = mockAdapter;
+}
 
 /** الحقول السرّية لكل بوابة: لا تُرجَع للوحة التحكم إلا مُقنّعة. */
 export const GATEWAY_SECRET_FIELDS: Record<string, readonly string[]> = {
