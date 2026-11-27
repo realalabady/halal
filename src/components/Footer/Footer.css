@@ -166,3 +166,29 @@
     justify-content: center;
   }
 }
+
+/* شريط الهوية النظامية — يُعرض فقط عند حفظ سجل تجاري أو رقم موحّد */
+.footer-legal {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 6px 18px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.footer-legal span,
+.footer-legal a {
+  font-variant-numeric: tabular-nums;
+}
+
+.footer-legal a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.footer-legal a:hover {
+  opacity: 1;
+}

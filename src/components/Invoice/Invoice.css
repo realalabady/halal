@@ -1,0 +1,550 @@
+/* ============================================================
+   الفاتورة المطبوعة — ورقة A4
+
+   الفاتورة ورقة، والورق لا يتبع سمة المستخدم: تعريف الألوان محلياً على
+   .invoice مقصود ولا يقرأ متغيّرات السمة العامة. لو قرأها لخرجت الفاتورة
+   حبراً فاتحاً على خلفية داكنة عند من يستخدم الوضع الداكن، أو بيضاء على
+   بيضاء عند الطباعة. القيم نفسها قيم DESIGN.md (يشم جيد #0f5f58، حبر
+   #16201e) مثبّتةً على نسختها الفاتحة.
+   ============================================================ */
+
+.invoice {
+  /* رموز الفاتورة — نسخة فاتحة ثابتة من لوحة المتجر */
+  --inv-ink: #16201e;
+  --inv-ink-soft: #5e6a67;
+  --inv-mid: #a2aaa6;
+  --inv-line: #e9e3d9;
+  --inv-line-strong: #d8d1c5;
+  --inv-accent: #0f5f58;
+  --inv-accent-tint: rgba(15, 95, 88, 0.08);
+  --inv-surface: #ffffff;
+  --inv-surface-2: #fbfaf7;
+
+  --inv-mono: ui-monospace, "Geist Mono", "SFMono-Regular", Menlo, monospace;
+
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 210mm;
+  margin-inline: auto;
+  padding: 18mm 14mm;
+  background: var(--inv-surface);
+  color: var(--inv-ink);
+  font-family: "Tajawal", "IBM Plex Sans Arabic", sans-serif;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.invoice *,
+.invoice *::before,
+.invoice *::after {
+  box-sizing: border-box;
+}
+
+.inv-mono {
+  font-family: var(--inv-mono);
+  font-variant-numeric: tabular-nums;
+  /* الأرقام اللاتينية مقصودة: الفاتورة تُقرأ من محاسب أو جهة حكومية، وقد
+     تُدقَّق آلياً، والأرقام العربية-الهندية تُفشل ذلك.
+     ولا تضع هنا display: الصنف يُوضع على خلايا <td> أيضاً، وأي قيمة عرض
+     غير الافتراضية تُخرج الخلية من تخطيط الجدول فتنهار الأعمدة. */
+  direction: ltr;
+  unicode-bidi: embed;
+}
+
+.inv-sub {
+  display: block;
+  font-size: 10px;
+  color: var(--inv-ink-soft);
+  font-weight: 400;
+}
+
+/* ==================== الرأس ==================== */
+
+.inv-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  padding-bottom: 14px;
+  border-bottom: 2px solid var(--inv-accent);
+}
+
+.inv-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.inv-logo {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+/* بديل الشعار: اسم المتجر كعلامة نصّية. يُطبع دائماً شيء في الرأس. */
+.inv-wordmark {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  min-width: 64px;
+  height: 64px;
+  padding-inline: 12px;
+  border-radius: 14px;
+  background: var(--inv-accent);
+  color: #ffffff;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.inv-brand-text {
+  min-width: 0;
+}
+
+.inv-legal-name {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 800;
+  line-height: 1.25;
+  color: var(--inv-ink);
+}
+
+.inv-legal-name-en {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--inv-ink-soft);
+  direction: ltr;
+  text-align: start;
+}
+
+.inv-identity {
+  margin: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.inv-identity > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+
+.inv-identity dt {
+  margin: 0;
+  font-size: 10px;
+  color: var(--inv-ink-soft);
+  white-space: nowrap;
+}
+
+.inv-identity dd {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* ==================== شريط العنوان ==================== */
+
+.inv-title-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--inv-accent-tint);
+}
+
+.inv-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--inv-accent);
+}
+
+.inv-title-en {
+  display: block;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--inv-ink-soft);
+  direction: ltr;
+  text-align: start;
+}
+
+.inv-serial {
+  text-align: end;
+}
+
+.inv-serial-label {
+  display: block;
+  font-size: 10px;
+  color: var(--inv-ink-soft);
+}
+
+.inv-serial strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* ==================== اللوحات ==================== */
+
+.inv-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.inv-panel {
+  border: 1px solid var(--inv-line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: var(--inv-surface-2);
+  min-width: 0;
+}
+
+.inv-panel-title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--inv-ink);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.inv-panel-title span {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--inv-mid);
+  direction: ltr;
+}
+
+.inv-meta {
+  display: grid;
+  gap: 5px;
+}
+
+.inv-meta-row {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+
+.inv-meta-label {
+  font-size: 10px;
+  color: var(--inv-ink-soft);
+}
+
+.inv-meta-label-en {
+  display: block;
+  font-size: 9px;
+  color: var(--inv-mid);
+  direction: ltr;
+  text-align: start;
+}
+
+.inv-meta-value {
+  font-size: 11px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* ==================== جدول الأصناف ==================== */
+
+.inv-items {
+  margin-top: 14px;
+}
+
+.inv-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.inv-table th,
+.inv-table td {
+  padding: 8px 10px;
+  text-align: start;
+  border-bottom: 1px solid var(--inv-line);
+  vertical-align: top;
+}
+
+.inv-table thead th {
+  background: var(--inv-accent);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  border-bottom: none;
+}
+
+.inv-table thead th:first-child {
+  border-start-start-radius: 10px;
+}
+
+.inv-table thead th:last-child {
+  border-start-end-radius: 10px;
+}
+
+.inv-th-en {
+  display: block;
+  font-size: 9px;
+  font-weight: 400;
+  opacity: 0.85;
+  direction: ltr;
+  text-align: start;
+}
+
+.inv-col-idx {
+  width: 34px;
+}
+
+.inv-col-num {
+  width: 92px;
+  text-align: end;
+}
+
+.inv-table td.inv-col-num,
+.inv-table td.inv-col-idx {
+  text-align: end;
+}
+
+.inv-item-name {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ==================== الإجماليات ==================== */
+
+.inv-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+  gap: 14px;
+  margin-top: 14px;
+  align-items: start;
+}
+
+.inv-words {
+  border: 1px dashed var(--inv-line-strong);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: var(--inv-surface-2);
+}
+
+.inv-words-label {
+  display: block;
+  font-size: 10px;
+  color: var(--inv-ink-soft);
+  margin-bottom: 4px;
+}
+
+.inv-words-value {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.7;
+}
+
+.inv-totals {
+  border: 1px solid var(--inv-line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.inv-total-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--inv-line);
+}
+
+.inv-total-row:last-child {
+  border-bottom: none;
+}
+
+.inv-sub-en {
+  display: block;
+  font-size: 9px;
+  color: var(--inv-mid);
+  direction: ltr;
+  text-align: start;
+}
+
+.inv-total-grand {
+  background: var(--inv-accent);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.inv-total-grand .inv-sub-en {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* ==================== تفاصيل الدفع ==================== */
+
+.inv-payment {
+  margin-top: 14px;
+  border: 1px solid var(--inv-line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: var(--inv-surface-2);
+}
+
+.inv-payment-body {
+  display: grid;
+  grid-template-columns: minmax(0, 180px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.inv-payment-method {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.inv-payment-logo {
+  width: 52px;
+  height: 32px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+/* ==================== الذيل ==================== */
+
+.inv-footer {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--inv-line);
+}
+
+.inv-verify {
+  text-align: center;
+  width: 92px;
+}
+
+.inv-qr {
+  width: 92px;
+  height: 92px;
+  display: block;
+  /* shape-rendering حادّ: بدونه يُنعّم المتصفح حدود الوحدات فيصعب المسح. */
+  shape-rendering: crispEdges;
+}
+
+.inv-verify-text {
+  margin: 4px 0 0;
+  font-size: 9px;
+  color: var(--inv-ink-soft);
+  line-height: 1.4;
+}
+
+.inv-footer-line {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.inv-footer-note {
+  margin: 6px 0 0;
+  font-size: 10px;
+  color: var(--inv-ink-soft);
+}
+
+/* ==================== شاشات صغيرة ==================== */
+
+@media (max-width: 720px) {
+  .invoice {
+    padding: 20px 16px;
+    font-size: 12px;
+  }
+
+  .inv-header,
+  .inv-columns,
+  .inv-summary,
+  .inv-payment-body,
+  .inv-footer {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .inv-verify {
+    width: auto;
+  }
+
+  .inv-qr {
+    margin-inline: auto;
+  }
+
+  /* الجدول أضيق من خمسة أعمدة على الجوال: تمريره أفقياً أصدق من ضغطه. */
+  .inv-items {
+    overflow-x: auto;
+  }
+
+  .inv-table {
+    min-width: 520px;
+  }
+}
+
+/* ==================== الطباعة ==================== */
+
+@page {
+  size: A4;
+  margin: 12mm;
+}
+
+@media print {
+  .invoice {
+    max-width: none;
+    width: auto;
+    padding: 0;
+    /* الألوان جزء من الوثيقة (رأس الجدول، شريط الإجمالي): بدون هذا يُسقطها
+       المتصفح افتراضياً فيضيع تمييز صفوف الجدول. */
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+    font-size: 10.5pt;
+  }
+
+  /* قائمة أصناف طويلة تمتدّ على صفحتين: رأس الجدول يتكرّر، ولا يُقطع صف. */
+  .inv-table thead {
+    display: table-header-group;
+  }
+
+  .inv-table tr {
+    break-inside: avoid;
+  }
+
+  .inv-panel,
+  .inv-words,
+  .inv-totals,
+  .inv-payment,
+  .inv-footer,
+  .inv-title-bar {
+    break-inside: avoid;
+  }
+
+  /* الظلال والحواف المستديرة تستهلك حبراً ولا تعني شيئاً على الورق. */
+  .invoice * {
+    box-shadow: none !important;
+  }
+
+  .inv-items {
+    overflow-x: visible;
+  }
+
+  .inv-table {
+    min-width: 0;
+  }
+}

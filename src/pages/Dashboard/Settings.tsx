@@ -9,6 +9,9 @@ import {
   Loader,
   Mail,
   AlertTriangle,
+  FileText,
+  Upload,
+  Trash2,
 } from "lucide-react";
 import { useStore } from "../../store/useStore";
 import {
@@ -30,6 +33,10 @@ import {
   reauthenticateWithCredential,
 } from "firebase/auth";
 import { auth } from "../../config/firebase";
+import { uploadImage } from "../../services/storage";
+import { isValidSaudiVatNumber } from "../../utils/invoice";
+import { DEFAULT_BUSINESS_INFO } from "../../store/useStore";
+import type { BusinessInfo } from "../../store/useStore";
 import type { StoreSettings } from "../../services/firestore";
 import "./Settings.css";
 
@@ -50,6 +57,11 @@ const Settings: React.FC = () => {
     bankIban: "",
     storeUrl: "",
   });
+
+  // الهوية النظامية التي تُطبع على الفاتورة
+  const [businessSettings, setBusinessSettings] =
+    useState<BusinessInfo>(DEFAULT_BUSINESS_INFO);
+  const [logoUploading, setLogoUploading] = useState(false);
 
   const [shippingSettings, setShippingSettings] = useState({
     freeShippingThreshold: 200,
@@ -113,6 +125,18 @@ const Settings: React.FC = () => {
           // المتحكَّم بها إلى غير متحكَّم بها.
           if (settings.store)
             setStoreSettings((prev) => ({ ...prev, ...settings.store }));
+          // الدمج لا الاستبدال، لنفس سبب كتلة المتجر أعلاه.
+          if (settings.business)
+            setBusinessSettings((prev) => ({ ...prev, ...settings.business }));
+          // نسبة الضريبة محفوظة في payment.vatRate لأنها النسبة التي يحسب
+          // بها الخادم أيضاً. كتلة business لا تملك نسختها الخاصة.
+          if (settings.payment?.vatRate != null)
+            setBusinessSettings((prev) => ({
+              ...prev,
+              vatRate: settings.payment!.vatRate as number,
+              // نسبة محفوظة أكبر من صفر تعني أن الضريبة مُطبّقة فعلاً.
+              vatEnabled: (settings.payment!.vatRate as number) > 0,
+            }));
           if (settings.shipping) setShippingSettings(settings.shipping);
           if (settings.notifications)
             setNotificationSettings(settings.notifications);
@@ -138,16 +162,45 @@ const Settings: React.FC = () => {
     fetchSettings();
   }, []);
 
+  /**
+   * الضريبة مُطبّقة فقط مع رقم ضريبي صحيح.
+   *
+   * الحالة «ضريبة معروضة بلا تسجيل» مخالفة نظامية، فهي غير قابلة للحفظ من
+   * هنا أصلاً: المفتاح لا يُفعّل بدون رقم صحيح، والنسبة المحفوظة تصير صفراً
+   * عند تعطيله — فيتوقّف الخادم عن استخراج الضريبة أيضاً.
+   */
+  const vatIsLegallyActive =
+    businessSettings.vatEnabled && isValidSaudiVatNumber(businessSettings.vatNumber);
+
+  const buildSettingsPayload = (
+    storeOverride?: typeof storeSettings,
+  ): StoreSettings => ({
+    store: storeOverride ?? storeSettings,
+    business: {
+      ...businessSettings,
+      vatEnabled: vatIsLegallyActive,
+      vatNumber: vatIsLegallyActive ? businessSettings.vatNumber.trim() : "",
+    },
+    shipping: shippingSettings,
+    notifications: notificationSettings,
+    payment: {
+      methods: paymentMethods,
+      // مصدر واحد للنسبة: هذه هي التي يقرأها orderPricing.ts على الخادم.
+      vatRate: vatIsLegallyActive ? Number(businessSettings.vatRate) || 0 : 0,
+    },
+  });
+
   const handleSave = async () => {
+    if (businessSettings.vatEnabled && !vatIsLegallyActive) {
+      alert(
+        "الرقم الضريبي غير صحيح: ١٥ رقماً يبدأ بـ ٣ وينتهي بـ ٣. " +
+          "لن تُفعّل الضريبة بدونه.",
+      );
+      return;
+    }
     setLoading(true);
     try {
-      const settingsData: StoreSettings = {
-        store: storeSettings,
-        shipping: shippingSettings,
-        notifications: notificationSettings,
-        payment: { methods: paymentMethods },
-      };
-      await updateSettings(settingsData);
+      await updateSettings(buildSettingsPayload());
       alert("تم حفظ الإعدادات بنجاح");
     } catch (error) {
       console.error("Error saving settings:", error);
@@ -172,18 +225,45 @@ const Settings: React.FC = () => {
     const next = { ...storeSettings, storeUrl: currentOrigin };
     setSavingStoreUrl(true);
     try {
-      await updateSettings({
-        store: next,
-        shipping: shippingSettings,
-        notifications: notificationSettings,
-        payment: { methods: paymentMethods },
-      });
+      await updateSettings(buildSettingsPayload(next));
       setStoreSettings(next);
     } catch (error) {
       console.error("Error saving store url:", error);
       alert("تعذّر حفظ رابط المتجر");
     } finally {
       setSavingStoreUrl(false);
+    }
+  };
+
+  /**
+   * شعار الفاتورة. يُرفع تحت stores/{id}/branding/ ويُحفظ رابطه في الإعدادات.
+   * الرفع فوري والحفظ مؤجّل لزرّ «حفظ التغييرات» مثل بقيّة الحقول.
+   */
+  const handleLogoUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      alert("اختر ملف صورة (PNG أو SVG أو JPG).");
+      return;
+    }
+    // الحدّ يطابق قاعدة التخزين لمسار branding؛ ملف أكبر يُرفض على الخادم
+    // برسالة غامضة، فنمنعه هنا برسالة مفهومة.
+    if (file.size > 2 * 1024 * 1024) {
+      alert("حجم الشعار أكبر من ٢ ميجابايت. اضغط الصورة ثم أعد المحاولة.");
+      return;
+    }
+    setLogoUploading(true);
+    try {
+      const url = await uploadImage(file, "branding");
+      setBusinessSettings((prev) => ({ ...prev, logoUrl: url }));
+    } catch (error) {
+      console.error("Error uploading logo:", error);
+      alert("تعذّر رفع الشعار. حاول مرة أخرى.");
+    } finally {
+      setLogoUploading(false);
     }
   };
 
@@ -237,6 +317,7 @@ const Settings: React.FC = () => {
 
   const tabs = [
     { id: "store", label: "المتجر", icon: Store },
+    { id: "business", label: "الفاتورة والهوية النظامية", icon: FileText },
     { id: "shipping", label: "الشحن", icon: Truck },
     { id: "notifications", label: "الإشعارات", icon: Bell },
     { id: "payment", label: "الدفع", icon: CreditCard },
@@ -443,6 +524,326 @@ const Settings: React.FC = () => {
           )}
 
           {/* Shipping Settings */}
+          {/* Invoice & legal identity */}
+          {activeTab === "business" && (
+            <div className="settings-card">
+              <div className="card-header">
+                <FileText size={22} />
+                <h2>الفاتورة والهوية النظامية</h2>
+              </div>
+              <div className="settings-form">
+                <p className="settings-hint">
+                  هذه البيانات تُطبع على كل فاتورة. الطلبات تحتفظ بنسختها
+                  لحظة البيع، فتعديلها هنا لا يغيّر فواتير سابقة.
+                </p>
+
+                {/* ===== الشعار ===== */}
+                <div className="form-group">
+                  <label>شعار الفاتورة</label>
+                  <div className="logo-uploader">
+                    {businessSettings.logoUrl ? (
+                      <img
+                        src={businessSettings.logoUrl}
+                        alt="شعار الفاتورة"
+                        className="logo-preview"
+                      />
+                    ) : (
+                      <div className="logo-placeholder">
+                        {storeSettings.storeName || "حلال"}
+                      </div>
+                    )}
+                    <div className="logo-actions">
+                      <label className="btn btn-outline btn-sm">
+                        {logoUploading ? (
+                          <Loader className="spinner" size={16} />
+                        ) : (
+                          <Upload size={16} />
+                        )}
+                        {businessSettings.logoUrl ? "تغيير" : "رفع شعار"}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          hidden
+                          onChange={handleLogoUpload}
+                          disabled={logoUploading}
+                        />
+                      </label>
+                      {businessSettings.logoUrl && (
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm"
+                          onClick={() =>
+                            setBusinessSettings((prev) => ({
+                              ...prev,
+                              logoUrl: "",
+                            }))
+                          }
+                        >
+                          <Trash2 size={16} />
+                          إزالة
+                        </button>
+                      )}
+                      <span className="field-hint">
+                        PNG أو SVG، حتى ٢ ميجابايت. بدون شعار يُطبع اسم المتجر
+                        نصّاً.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ===== الاسم القانوني ===== */}
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>الاسم القانوني (عربي)</label>
+                    <input
+                      type="text"
+                      placeholder="مؤسسة … للتجارة"
+                      value={businessSettings.legalNameAr}
+                      onChange={(e) =>
+                        setBusinessSettings({
+                          ...businessSettings,
+                          legalNameAr: e.target.value,
+                        })
+                      }
+                    />
+                    <span className="field-hint">
+                      اتركه فارغاً ليُستخدم اسم المتجر.
+                    </span>
+                  </div>
+                  <div className="form-group">
+                    <label>الاسم القانوني (إنجليزي)</label>
+                    <input
+                      type="text"
+                      dir="ltr"
+                      placeholder="Hally Trading Est."
+                      value={businessSettings.legalNameEn}
+                      onChange={(e) =>
+                        setBusinessSettings({
+                          ...businessSettings,
+                          legalNameEn: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+
+                {/* ===== السجل التجاري ===== */}
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>رقم السجل التجاري</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      dir="ltr"
+                      placeholder="1010101010"
+                      value={businessSettings.crNumber}
+                      onChange={(e) =>
+                        setBusinessSettings({
+                          ...businessSettings,
+                          crNumber: e.target.value.replace(/\D/g, ""),
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>الرقم الموحّد للمنشأة</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      dir="ltr"
+                      placeholder="7001234567"
+                      value={businessSettings.unifiedNumber}
+                      onChange={(e) =>
+                        setBusinessSettings({
+                          ...businessSettings,
+                          unifiedNumber: e.target.value.replace(/\D/g, ""),
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>رابط التحقق من السجل التجاري</label>
+                  <input
+                    type="url"
+                    dir="ltr"
+                    placeholder="https://cr.sbc.gov.sa/cr/1010101010"
+                    value={businessSettings.crVerifyUrl}
+                    onChange={(e) =>
+                      setBusinessSettings({
+                        ...businessSettings,
+                        crVerifyUrl: e.target.value,
+                      })
+                    }
+                  />
+                  <span className="field-hint">
+                    يُرسم رمز QR على الفاتورة، فيتحقّق المستلم من المنشأة
+                    بمسحه. اتركه فارغاً ليُحذف الرمز.
+                  </span>
+                </div>
+
+                {/* ===== العنوان ===== */}
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>العنوان على الفاتورة (عربي)</label>
+                    <input
+                      type="text"
+                      value={businessSettings.addressAr}
+                      onChange={(e) =>
+                        setBusinessSettings({
+                          ...businessSettings,
+                          addressAr: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>العنوان على الفاتورة (إنجليزي)</label>
+                    <input
+                      type="text"
+                      dir="ltr"
+                      value={businessSettings.addressEn}
+                      onChange={(e) =>
+                        setBusinessSettings({
+                          ...businessSettings,
+                          addressEn: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+
+                {/* ===== ترقيم ونص الفاتورة ===== */}
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>بادئة رقم الفاتورة</label>
+                    <input
+                      type="text"
+                      dir="ltr"
+                      maxLength={6}
+                      placeholder="HLY"
+                      value={businessSettings.invoicePrefix}
+                      onChange={(e) =>
+                        setBusinessSettings({
+                          ...businessSettings,
+                          invoicePrefix: e.target.value
+                            .toUpperCase()
+                            .replace(/[^A-Z0-9]/g, ""),
+                        })
+                      }
+                    />
+                    <span className="field-hint">
+                      مثال: {businessSettings.invoicePrefix || "HLY"}-20261127-51932
+                    </span>
+                  </div>
+                  <div className="form-group">
+                    <label>ملاحظات أسفل الفاتورة</label>
+                    <input
+                      type="text"
+                      placeholder="الإرجاع خلال ٣ أيام من التسليم."
+                      value={businessSettings.invoiceNotes}
+                      onChange={(e) =>
+                        setBusinessSettings({
+                          ...businessSettings,
+                          invoiceNotes: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+
+                {/* ===== الضريبة ===== */}
+                <div className="settings-subsection">
+                  <h3>ضريبة القيمة المضافة</h3>
+                  <div className="form-group checkbox-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={businessSettings.vatEnabled}
+                        onChange={(e) =>
+                          setBusinessSettings({
+                            ...businessSettings,
+                            vatEnabled: e.target.checked,
+                          })
+                        }
+                      />
+                      <span>تطبيق الضريبة وإظهارها على الفاتورة</span>
+                    </label>
+                    <span className="field-hint">
+                      لا تُفعّلها قبل التسجيل في هيئة الزكاة والضريبة. إظهار
+                      ضريبة بلا تسجيل مخالفة، ولذلك لا يُقبل التفعيل بدون رقم
+                      ضريبي صحيح.
+                    </span>
+                  </div>
+
+                  {businessSettings.vatEnabled && (
+                    <>
+                      <div className="form-row sub-setting">
+                        <div className="form-group">
+                          <label>الرقم الضريبي</label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            dir="ltr"
+                            maxLength={15}
+                            placeholder="300000000000003"
+                            value={businessSettings.vatNumber}
+                            onChange={(e) =>
+                              setBusinessSettings({
+                                ...businessSettings,
+                                vatNumber: e.target.value.replace(/\D/g, ""),
+                              })
+                            }
+                          />
+                          <span
+                            className={`field-hint${
+                              businessSettings.vatNumber && !vatIsLegallyActive
+                                ? " field-hint-error"
+                                : ""
+                            }`}
+                          >
+                            {businessSettings.vatNumber && !vatIsLegallyActive
+                              ? "رقم غير صحيح: ١٥ رقماً يبدأ بـ ٣ وينتهي بـ ٣."
+                              : "١٥ رقماً يبدأ بـ ٣ وينتهي بـ ٣."}
+                          </span>
+                        </div>
+                        <div className="form-group">
+                          <label>النسبة (%)</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={99}
+                            step={0.5}
+                            dir="ltr"
+                            value={businessSettings.vatRate}
+                            onChange={(e) =>
+                              setBusinessSettings({
+                                ...businessSettings,
+                                vatRate: Number(e.target.value),
+                              })
+                            }
+                          />
+                          <span className="field-hint">
+                            أسعار المتجر شاملة الضريبة، فالنسبة تُستخرج من
+                            الإجمالي ولا تُضاف إليه — أي سعر معروض لا يتغيّر.
+                          </span>
+                        </div>
+                      </div>
+                      {!vatIsLegallyActive && (
+                        <p className="settings-warning">
+                          <AlertTriangle size={16} />
+                          بدون رقم ضريبي صحيح تُحفظ النسبة صفراً، وتبقى
+                          الفواتير «فاتورة» لا «فاتورة ضريبية مبسطة».
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {activeTab === "shipping" && (
             <div className="settings-card">
               <div className="card-header">

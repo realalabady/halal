@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import {
   User,
+  FileText,
   MapPin,
   Phone,
   Edit,
@@ -514,6 +515,17 @@ const Account: React.FC<AccountProps> = ({ initialTab }) => {
                                 <span>الإجمالي:</span>
                                 <strong>{formatPrice(order.total)}</strong>
                               </div>
+                            </div>
+                            {/* إعادة الطباعة في أي وقت: الفاتورة تُبنى من
+                                لقطة الطلب، فتخرج بنفس الأرقام دائماً. */}
+                            <div className="order-actions">
+                              <Link
+                                to={`/invoice/${order.id}`}
+                                className="order-invoice-link"
+                              >
+                                <FileText size={14} aria-hidden="true" />
+                                الفاتورة
+                              </Link>
                             </div>
                           </div>
                         );

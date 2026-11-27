@@ -547,3 +547,122 @@
     width: 100%;
   }
 }
+
+/* ==================== تبويب الفاتورة والهوية النظامية ==================== */
+
+.settings-hint {
+  margin: 0 0 4px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm, 10px);
+  background: var(--primary-tint, rgba(15, 95, 88, 0.1));
+  color: var(--ink, #16201e);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.settings-subsection {
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line, #e9e3d9);
+  display: grid;
+  gap: 16px;
+}
+
+.settings-subsection h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink, #16201e);
+}
+
+.settings-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm, 10px);
+  border: 1px solid var(--warning, #9a6b1f);
+  background: rgba(154, 107, 31, 0.08);
+  color: var(--warning, #9a6b1f);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.settings-warning svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.field-hint-error {
+  color: var(--danger, #b02a1e);
+}
+
+/* رافع الشعار */
+.logo-uploader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 14px;
+  border: 1px dashed var(--line-strong, #d8d1c5);
+  border-radius: var(--radius, 14px);
+  background: var(--surface-2, #fdfcf9);
+}
+
+.logo-preview {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  flex: 0 0 auto;
+  border-radius: var(--radius-sm, 10px);
+  background: #fff;
+  border: 1px solid var(--line, #e9e3d9);
+}
+
+.logo-placeholder {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-sm, 10px);
+  background: var(--primary, #0f5f58);
+  color: var(--on-primary, #fff);
+  font-size: 15px;
+  font-weight: 800;
+  text-align: center;
+  padding: 4px;
+  overflow: hidden;
+}
+
+.logo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.logo-actions .btn-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding-inline: 14px;
+  border-radius: var(--radius-sm, 10px);
+  border: 1px solid var(--line, #e9e3d9);
+  background: var(--surface, #fff);
+  color: var(--ink, #16201e);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.logo-actions .btn-sm:hover {
+  background: var(--primary-tint, rgba(15, 95, 88, 0.1));
+}
+
+.logo-actions .field-hint {
+  flex: 1 1 200px;
+}

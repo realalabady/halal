@@ -39,6 +39,7 @@ const Shipping = lazy(() => import("./pages/Legal/Shipping"));
 const Returns = lazy(() => import("./pages/Legal/Returns"));
 const FAQ = lazy(() => import("./pages/Legal/FAQ"));
 const OrderConfirmation = lazy(() => import("./pages/OrderConfirmation/OrderConfirmation"));
+const InvoiceView = lazy(() => import("./pages/InvoiceView/InvoiceView"));
 
 // Dashboard Pages - Lazy Loaded
 const DashboardHome = lazy(() => import("./pages/Dashboard/DashboardHome"));
@@ -89,7 +90,7 @@ const StoreLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 );
 
 const App: React.FC = () => {
-  const { setUser, setProducts, setStoreInfo } = useStore();
+  const { setUser, setProducts, setStoreInfo, setBusinessInfo } = useStore();
   const [loading, setLoading] = useState(true);
 
   // الاشتراك المركزي في المنتجات وإعدادات المتجر
@@ -99,12 +100,18 @@ const App: React.FC = () => {
     );
     const unsubSettings = subscribeToSettings((settings) => {
       if (settings?.store) setStoreInfo(settings.store);
+      if (settings?.business) setBusinessInfo(settings.business);
+      // نسبة الضريبة مصدرها settings.payment.vatRate — وهي النسبة نفسها التي
+      // يحسب بها الخادم (functions/src/orderPricing.ts). قراءتها من هنا تمنع
+      // أن تُطبع الفاتورة بنسبة تخالف ما حُصّل فعلاً.
+      if (settings?.payment?.vatRate != null)
+        setBusinessInfo({ vatRate: settings.payment.vatRate });
     });
     return () => {
       unsubProducts();
       unsubSettings();
     };
-  }, [setProducts, setStoreInfo]);
+  }, [setProducts, setStoreInfo, setBusinessInfo]);
 
   // الحفاظ على جلسة المستخدم عند تحديث الصفحة
   useEffect(() => {
@@ -231,6 +238,8 @@ const App: React.FC = () => {
             </StoreLayout>
           }
         />
+        {/* الفاتورة وثيقة مطبوعة: بلا Header/Footer حتى لا يدخلا الورقة. */}
+        <Route path="/invoice/:orderId" element={<InvoiceView />} />
         <Route
           path="/products"
           element={

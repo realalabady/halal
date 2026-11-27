@@ -23,6 +23,16 @@ service firebase.storage {
           && request.resource.size < 2 * 1024 * 1024
           && request.resource.contentType.matches('image/.*');
       }
+
+      // Store branding (invoice logo). Public read is required: the logo is
+      // fetched by <img> inside the printable invoice, which has no auth
+      // context of its own. Same authed-image-write gate as the paths above.
+      match /branding/{allPaths=**} {
+        allow read: if true;
+        allow write: if request.auth != null
+          && request.resource.size < 2 * 1024 * 1024
+          && request.resource.contentType.matches('image/.*');
+      }
     }
 
     // Deny everything else

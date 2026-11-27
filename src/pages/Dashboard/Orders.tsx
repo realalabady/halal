@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import {
   Search,
   Eye,
+  FileText,
   Download,
   Truck,
   Package,
@@ -365,13 +367,26 @@ const Orders: React.FC = () => {
                           </select>
                         </td>
                         <td>
-                          <button
-                            className="btn btn-sm btn-outline"
-                            onClick={() => setSelectedOrder(order)}
-                          >
-                            <Eye size={14} />
-                            عرض
-                          </button>
+                          <div className="row-actions">
+                            <button
+                              className="btn btn-sm btn-outline"
+                              onClick={() => setSelectedOrder(order)}
+                            >
+                              <Eye size={14} />
+                              عرض
+                            </button>
+                            {/* صفحة مستقلة لا نافذة: الأدمن يطبعها أو يرسل
+                                رابطها للعميل كما هو. */}
+                            <Link
+                              to={`/invoice/${order.id}`}
+                              className="btn btn-sm btn-outline"
+                              target="_blank"
+                              rel="noopener"
+                            >
+                              <FileText size={14} />
+                              فاتورة
+                            </Link>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -628,6 +643,15 @@ const Orders: React.FC = () => {
                 <Trash2 size={16} />
                 حذف الطلب
               </button>
+              <Link
+                to={`/invoice/${selectedOrder.id}`}
+                className="btn btn-outline"
+                target="_blank"
+                rel="noopener"
+              >
+                <FileText size={16} />
+                فتح الفاتورة
+              </Link>
               <button
                 className="btn btn-outline"
                 onClick={() => {

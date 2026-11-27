@@ -554,3 +554,17 @@
     width: 100%;
   }
 }
+
+/* عمود الإجراءات في صف الطلب: زرّان جنباً إلى جنب، وتحت الآخر عند الضيق. */
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.row-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}

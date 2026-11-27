@@ -14,6 +14,10 @@ import {
 } from "firebase/firestore";
 import { storeCol, storeDoc, STORE_ID } from "../config/store";
 import type { Product } from "../types";
+// الختم يقرأ الهوية النظامية من المتجر مباشرة. لا دورة: useStore لا يستورد
+// شيئاً من services/، و utils/invoice يستورد الأنواع بـ import type فقط.
+import { useStore } from "../store/useStore";
+import { buildInvoiceSnapshot } from "../utils/invoice";
 
 // كل المسارات هنا مقيّدة بمتجر واحد (stores/{STORE_ID}/...) عبر storeCol/storeDoc.
 // لا تستخدم collection(db, "...") مباشرة: المسارات العامة مشتركة بين كل المتاجر.
@@ -157,6 +161,22 @@ export interface FirestoreOrder {
   // حقول الشحن
   trackingNumber?: string;
   trackingUrl?: string;
+
+  // ==================== لقطة الفاتورة ====================
+  // تُثبَّت لحظة إنشاء الطلب ولا تُحدَّث بعدها. الفاتورة سجلّ تاريخي: لو
+  // قرأت الإعدادات الحالية لتغيّرت فاتورة بيع قديم كلما عدّل التاجر رقمه
+  // الضريبي أو نسبة الضريبة.
+  /** الرقم التسلسلي، مثل HLY-20261127-51932 */
+  invoiceNumber?: string;
+  invoiceIssuedAt?: Date;
+  /** نسبة الضريبة المطبّقة على هذا الطلب (٠ = لا ضريبة مُصرَّح بها) */
+  invoiceVatRate?: number;
+  invoiceVatAmount?: number;
+  invoicePricesIncludeVat?: boolean;
+  /** الرقم الضريبي وقت البيع. فراغه ⇒ تُطبع فاتورة عادية لا ضريبية. */
+  invoiceVatNumber?: string;
+  invoiceCrNumber?: string;
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -173,11 +193,28 @@ export const getOrders = async (): Promise<FirestoreOrder[]> => {
   })) as FirestoreOrder[];
 };
 
+/**
+ * ينشئ طلباً ويختم عليه لقطة الفاتورة.
+ *
+ * الختم هنا لا في Checkout: كل طرق الدفع التي يكتبها العميل — نقد عند
+ * الاستلام، تحويل بنكي، إمكان، PayPal — تمرّ من هذه الدالة وحدها، فلا يمكن
+ * أن يُنسى الختم في فرع منها. (طلبات بوابات الدفع يُنشئها الخادم في
+ * functions/src/paymentGatewayApi.ts، وهو يختم اللقطة بنفسه هناك.)
+ */
 export const addOrder = async (
   order: Omit<FirestoreOrder, "id">,
 ): Promise<string> => {
+  const issuedAt = new Date();
+  const snapshot = buildInvoiceSnapshot(
+    useStore.getState().businessInfo,
+    Number(order.total) || 0,
+    issuedAt,
+  );
+
   const docRef = await addDoc(ordersCollection, {
     ...order,
+    ...snapshot,
+    invoiceIssuedAt: Timestamp.fromDate(issuedAt),
     createdAt: Timestamp.now(),
     updatedAt: Timestamp.now(),
   });
@@ -411,6 +448,28 @@ export interface StoreSettings {
     bankIban?: string;
     /** الرابط العام للمتجر. تبني منه الدوال روابط العودة من بوابات الدفع. */
     storeUrl?: string;
+  };
+  /**
+   * الهوية النظامية التي تُطبع على الفاتورة.
+   *
+   * المفتاح `business` لا `legal`: مجموعة settings/legal في هذا المشروع تعني
+   * نصوص الصفحات النظامية (الخصوصية، الإرجاع)، فالاسم الثاني يلتبس بها.
+   */
+  business?: {
+    legalNameAr?: string;
+    legalNameEn?: string;
+    crNumber?: string;
+    unifiedNumber?: string;
+    crVerifyUrl?: string;
+    addressAr?: string;
+    addressEn?: string;
+    invoicePrefix?: string;
+    invoiceNotes?: string;
+    logoUrl?: string;
+    vatEnabled?: boolean;
+    vatNumber?: string;
+    vatRate?: number;
+    pricesIncludeVat?: boolean;
   };
   shipping?: {
     freeShippingThreshold: number;

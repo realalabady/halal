@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { CheckCircle, Loader, ShoppingBag, Package } from "lucide-react";
+import { CheckCircle, FileText, Loader, ShoppingBag, Package } from "lucide-react";
 import { getDoc } from "firebase/firestore";
 import { storeDoc } from "../../config/store";
 import { useStore } from "../../store/useStore";
@@ -97,8 +97,19 @@ const OrderConfirmation: React.FC = () => {
                 </div>
               )}
 
+              {/* الفاتورة هي أول إجراء بعد الدفع: العميل يريد وثيقة يحتفظ
+                  بها، لا قائمة طلبات. */}
               <div className="confirmation-actions">
-                <Link to="/account" className="btn btn-primary">
+                {orderId && (
+                  <Link
+                    to={`/invoice/${orderId}`}
+                    className="btn btn-primary"
+                  >
+                    <FileText size={18} aria-hidden="true" />
+                    تحميل الفاتورة
+                  </Link>
+                )}
+                <Link to="/account" className="btn btn-outline">
                   عرض طلباتي
                 </Link>
                 <button

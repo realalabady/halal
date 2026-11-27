@@ -17,8 +17,14 @@ import { useStore } from "../../store/useStore";
 import "./Footer.css";
 
 const Footer: React.FC = () => {
-  const { storeInfo } = useStore();
+  const { storeInfo, businessInfo } = useStore();
   const storeName = storeInfo.storeName || "حلال";
+  // مصدر واحد للهوية النظامية: التذييل والفاتورة يقرآن نفس الكتلة، فلا
+  // يمكن أن يعرض أحدهما رقم سجل ويعرض الآخر غيره.
+  const hasLegalIdentity =
+    !!businessInfo.crNumber ||
+    !!businessInfo.unifiedNumber ||
+    (businessInfo.vatEnabled && !!businessInfo.vatNumber);
   return (
     <footer className="footer">
       {/* Features */}
@@ -160,6 +166,33 @@ const Footer: React.FC = () => {
       {/* Bottom Bar */}
       <div className="footer-bottom">
         <div className="container">
+          {hasLegalIdentity && (
+            <p className="footer-legal">
+              {businessInfo.legalNameAr && (
+                <span>{businessInfo.legalNameAr}</span>
+              )}
+              {businessInfo.crNumber && (
+                <span>سجل تجاري {businessInfo.crNumber}</span>
+              )}
+              {businessInfo.unifiedNumber && (
+                <span>الرقم الموحّد {businessInfo.unifiedNumber}</span>
+              )}
+              {/* الرقم الضريبي لا يُعرض إلا مع تسجيل فعلي — نفس الشرط
+                  القانوني المطبّق على الفاتورة. */}
+              {businessInfo.vatEnabled && businessInfo.vatNumber && (
+                <span>الرقم الضريبي {businessInfo.vatNumber}</span>
+              )}
+              {businessInfo.crVerifyUrl && (
+                <a
+                  href={businessInfo.crVerifyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  التحقق من السجل
+                </a>
+              )}
+            </p>
+          )}
           <p>
             © {new Date().getFullYear()} {storeName}. جميع الحقوق محفوظة.
           </p>

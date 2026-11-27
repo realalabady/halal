@@ -586,3 +586,30 @@
   color: var(--danger);
   border-color: var(--danger);
 }
+
+/* رابط الفاتورة في بطاقة الطلب */
+.order-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--line, #e9e3d9);
+}
+
+.order-invoice-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding-inline: 14px;
+  border-radius: var(--radius-sm, 10px);
+  border: 1px solid var(--line, #e9e3d9);
+  background: var(--surface, #fff);
+  color: var(--primary, #0f5f58);
+  font-size: 13px;
+  font-weight: 700;
+  transition: background-color 0.15s ease;
+}
+
+.order-invoice-link:hover {
+  background: var(--primary-tint, rgba(15, 95, 88, 0.1));
+}

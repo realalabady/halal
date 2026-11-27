@@ -35,6 +35,7 @@ import {
 import type { GatewayEnvironment } from "./gatewayStore";
 import { describeGatewayError } from "./gatewayHttp";
 import { computeOrderPricing, validateOrderAmountFromPricing } from "./orderPricing";
+import { buildInvoiceSnapshot } from "./invoiceSnapshot";
 import { expirePendingPayment, reconcileGatewayPayment } from "./paymentReconcile";
 import type { GatewayContext, GatewayCredentials } from "./gatewayTypes";
 import { isGatewayDeclinedError } from "./gatewayTypes";
@@ -356,6 +357,11 @@ export function buildPaymentGatewayFunctions(deps: GatewayApiDeps) {
         string,
         unknown
       >;
+      // الهوية النظامية للفاتورة، من نفس القراءة — لا استعلام إضافي.
+      const businessBlock = (storeSettingsSnap.data()?.business || {}) as Record<
+        string,
+        unknown
+      >;
       const pickupAddress = resolvePickupAddress(
         asString(storeBlock.storeAddress),
         asString(storeBlock.storeName),
@@ -402,6 +408,9 @@ export function buildPaymentGatewayFunctions(deps: GatewayApiDeps) {
           nationalAddress: asString(address.nationalAddress),
         },
         notes: asString(data?.notes),
+        // ختم الفاتورة هنا، على المسوّدة: المصالحة تنسخ المسوّدة كما هي إلى
+        // مستند الطلب، فالختم يسري على كل بوابة بلا تعديل في المصالحة.
+        ...buildInvoiceSnapshot(businessBlock, pricing.total, pricing.vat),
       };
 
       let creds: GatewayCredentials;

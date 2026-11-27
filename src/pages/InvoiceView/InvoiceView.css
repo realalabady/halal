@@ -1,0 +1,119 @@
+/* صفحة الفاتورة: شريط أدوات على الشاشة، وورقة واحدة عند الطباعة. */
+
+.invoice-view {
+  min-height: 100vh;
+  background: var(--bg-subtle, #f0ece3);
+  padding: 24px 16px 48px;
+}
+
+.invoice-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 210mm;
+  margin: 0 auto 16px;
+}
+
+.invoice-toolbar .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding-inline: 18px;
+  border-radius: var(--radius-sm, 10px);
+  border: 1px solid transparent;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.invoice-toolbar .btn-primary {
+  background: var(--primary, #0f5f58);
+  color: var(--on-primary, #fff);
+}
+
+.invoice-toolbar .btn-primary:hover:not(:disabled) {
+  background: var(--primary-dark, #0a4a44);
+}
+
+.invoice-toolbar .btn-primary:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.invoice-toolbar .btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.invoice-toolbar .btn-outline {
+  background: transparent;
+  border-color: var(--line, #e9e3d9);
+  color: var(--ink, #16201e);
+}
+
+.invoice-toolbar .btn-outline:hover {
+  background: var(--surface, #fff);
+}
+
+.invoice-sheet {
+  max-width: 210mm;
+  margin-inline: auto;
+  border-radius: var(--radius-lg, 20px);
+  overflow: hidden;
+  box-shadow: var(--shadow-lg, 0 18px 40px -16px rgba(22, 32, 30, 0.2));
+}
+
+.invoice-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  max-width: 460px;
+  margin: 48px auto;
+  padding: 32px 24px;
+  border-radius: var(--radius-lg, 20px);
+  background: var(--surface, #fff);
+  border: 1px solid var(--line, #e9e3d9);
+  color: var(--ink-soft, #5e6a67);
+  text-align: center;
+}
+
+.invoice-state .spinner {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .invoice-state .spinner {
+    animation: none;
+  }
+}
+
+@media print {
+  /* الصفحة كلها تختفي عدا الورقة: الشريط، الخلفية، الظل، الحشو. */
+  .invoice-view {
+    min-height: 0;
+    padding: 0;
+    background: #ffffff;
+  }
+
+  .invoice-toolbar,
+  .invoice-state {
+    display: none !important;
+  }
+
+  .invoice-sheet {
+    max-width: none;
+    border-radius: 0;
+    box-shadow: none;
+    overflow: visible;
+  }
+}

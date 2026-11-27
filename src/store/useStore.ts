@@ -14,6 +14,63 @@ export interface StoreInfo {
   bankIban: string;
 }
 
+/**
+ * الهوية النظامية للمتجر — ما يُطبع على الفاتورة.
+ *
+ * منفصلة عن StoreInfo عن قصد: StoreInfo هي واجهة المتجر (اسم، بريد، هاتف)،
+ * وهذه وثائقه النظامية (سجل تجاري، رقم ضريبي، اسم قانوني). دمجهما يجعل كل
+ * حقل نظامي يظهر في كل مكان يقرأ storeInfo اليوم.
+ */
+export interface BusinessInfo {
+  /** الاسم القانوني كما في السجل التجاري */
+  legalNameAr: string;
+  legalNameEn: string;
+  /** رقم السجل التجاري */
+  crNumber: string;
+  /** الرقم الموحّد للمنشأة (٧٠٠…) */
+  unifiedNumber: string;
+  /** رابط التحقق من السجل في المركز السعودي للأعمال — يصير رمز QR على الفاتورة */
+  crVerifyUrl: string;
+  addressAr: string;
+  addressEn: string;
+  /** بادئة الرقم التسلسلي للفاتورة */
+  invoicePrefix: string;
+  /** سطر حرّ أسفل الفاتورة (سياسة إرجاع، شروط) */
+  invoiceNotes: string;
+  /** شعار يُطبع في رأس الفاتورة. فارغ ⇒ يُرسم اسم المتجر نصّاً. */
+  logoUrl: string;
+  /** لا تُفعّل إلا مع رقم ضريبي صحيح — انظر تبويب الفاتورة في الإعدادات */
+  vatEnabled: boolean;
+  vatNumber: string;
+  vatRate: number;
+  /** أسعار المتجر شاملة الضريبة (الممارسة السعودية المعتادة) */
+  pricesIncludeVat: boolean;
+}
+
+/**
+ * قيم ابتدائية فارغة للحقول النظامية.
+ *
+ * فارغة لا مُختلقة: رقم سجل تجاري مكتوب في الكود يُطبع على فاتورة حقيقية
+ * ويُقدَّم لجهة حكومية. الفاتورة تُخفي كل حقل فارغ، وتبويب الإعدادات هو
+ * المكان الذي يملأ منه التاجر هويته.
+ */
+export const DEFAULT_BUSINESS_INFO: BusinessInfo = {
+  legalNameAr: "",
+  legalNameEn: "",
+  crNumber: "",
+  unifiedNumber: "",
+  crVerifyUrl: "",
+  addressAr: "",
+  addressEn: "",
+  invoicePrefix: "HLY",
+  invoiceNotes: "",
+  logoUrl: "",
+  vatEnabled: false,
+  vatNumber: "",
+  vatRate: 15,
+  pricesIncludeVat: true,
+};
+
 export const DEFAULT_STORE_INFO: StoreInfo = {
   storeName: "حلال",
   storeEmail: "",
@@ -47,6 +104,10 @@ interface StoreState {
   // Store info / branding (من Firestore settings/store)
   storeInfo: StoreInfo;
   setStoreInfo: (info: Partial<StoreInfo>) => void;
+
+  // الهوية النظامية للفواتير (من Firestore settings/store.business)
+  businessInfo: BusinessInfo;
+  setBusinessInfo: (info: Partial<BusinessInfo>) => void;
 
   // Wishlist (المفضلة)
   wishlist: string[];
@@ -160,6 +221,11 @@ export const useStore = create<StoreState>()(
       storeInfo: DEFAULT_STORE_INFO,
       setStoreInfo: (info) =>
         set((state) => ({ storeInfo: { ...state.storeInfo, ...info } })),
+
+      // Business / legal identity
+      businessInfo: DEFAULT_BUSINESS_INFO,
+      setBusinessInfo: (info) =>
+        set((state) => ({ businessInfo: { ...state.businessInfo, ...info } })),
 
       // Wishlist
       wishlist: [],
